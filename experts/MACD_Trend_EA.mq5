@@ -347,8 +347,11 @@ void ClosePositions(ENUM_ORDER_TYPE type)
                   request.price = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
                }
                
-               OrderSend(request, result);
-            }
+               if(OrderSend(request, result))
+               {
+                  if(result.retcode == TRADE_RETCODE_DONE)
+                     Print("Closed position #", ticket);
+               }
          }
       }
    }
