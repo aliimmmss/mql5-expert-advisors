@@ -1,76 +1,146 @@
-# EMA RSI Gold EA
+# Expert Advisors
 
-Expert Advisor for XAUUSDc based on EMA Crossover + RSI Confirmation strategy.
+Production-ready Expert Advisors for MetaTrader 5, built from analysis of 1,000+ MQL5 articles.
 
-## Strategy Overview
+## Available EAs
 
-**Based on analysis of 326 gold trading articles from MQL5.com**
+### 1. SmartMoney Concepts EA (v1.0)
 
-### Entry Signals
+**File**: `SmartMoney_Concepts_EA.mq5`
+**Best for**: Any symbol, H1 timeframe
+**Approach**: Non-lagging, price-action-based using institutional trading concepts
 
-**BUY:**
-1. Fast EMA (21) crosses above Slow EMA (50)
-2. RSI > 50 (bullish momentum)
-3. RSI < 70 (not overbought)
+#### Strategies (8 total)
 
-**SELL:**
-1. Fast EMA (21) crosses below Slow EMA (50)
-2. RSI < 50 (bearish momentum)
-3. RSI > 30 (not oversold)
+| Strategy | Type | Logic |
+|----------|------|-------|
+| BOS | Structure | Break of Structure — trend continuation |
+| CHoCH | Structure | Change of Character — trend reversal |
+| FVG | Zone | Fair Value Gap — price imbalance fills |
+| IFVG | Zone | Inverse FVG — mitigated gap reversals |
+| Order Blocks | Zone | Institutional supply/demand zones |
+| Liquidity Sweep | Liquidity | BSL/SSL wick rejections |
+| Opening Range | Session | Breakout after range formation |
+| Midnight Range | Session | Breakout after midnight session |
 
-### Exit Rules
+#### Architecture
 
-- **Stop Loss**: 1.5 × ATR(14)
-- **Take Profit**: 3.0 × ATR(14)
-- **Risk-Reward**: 1:2
-- **Opposite Signal**: Closes current position
+```
+Layer 1: H4 MA200 → Trend Bias
+Layer 2: H1 Swing Structure → HH/HL/LH/LL
+Layer 3: M15 Momentum → Breakout Confirmation
+Layer 4: Sentiment Engine → Strategy Selection
+Layer 5: Trade Execution → Entry at Zones
+```
 
-## Recommended Settings
+#### Key Features
+
+- Multi-timeframe sentiment analysis (H4/H1/M15)
+- Automatic strategy switching based on market conditions
+- Visual indicators on chart (swing labels, FVG/OB rectangles)
+- Max 3 concurrent trades with sentiment alignment
+- Configurable: toggle any strategy on/off
+
+#### Recommended Settings
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| Timeframe | H1 | Best for structure detection |
+| Higher TF | H4 | Trend bias |
+| Medium TF | H1 | Structure analysis |
+| Lower TF | M15 | Entry timing |
+| Lot Size | 0.01 | Start small |
+| Stop Loss | 500 points | ~50 pips |
+| Take Profit | 1500 points | ~150 pips (1:3 R:R) |
+
+---
+
+### 2. Gold Multi-Strategy EA (v2.0)
+
+**File**: `Gold_MultiStrategy_EA.mq5`
+**Best for**: XAUUSDc, H1 timeframe
+**Approach**: Signal-voting system with 11 strategies + filters
+
+#### Strategies (11 total)
+
+**Original Strategies:**
+1. EMA RSI Crossover
+2. Trend + S/R Bounce
+3. Price Breakout
+4. RSI Extreme Reversal
+5. MACD Trend Following
+6. Bollinger Squeeze
+
+**Advanced Strategies:**
+7. Heikin Ashi Breakout
+8. Donchian Channel Breakout
+9. Golden/Death Cross
+10. Advanced Divergence
+11. Smart Money Concepts (Simplified)
+
+#### Filters
+
+- ADX Trend Filter (strength > 25)
+- Multi-Timeframe Confirmation (H4 + M15)
+- Volume Filter (above average)
+
+#### Exit Management
+
+- Partial Close (50% at 1:1 R:R)
+- Trailing Stop (after 2:1 R:R)
+- Breakeven Move (after 1:1 R:R)
+
+#### Recommended Settings
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
 | Timeframe | H1 | Best for gold |
-| Fast EMA | 21 | Standard |
-| Slow EMA | 50 | Standard |
-| RSI Period | 14 | Standard |
-| Risk % | 1% | Conservative |
+| Symbol | XAUUSDc | HFM Cent Account |
+| Deposit | 5,000+ USC | Minimum $50 |
+| Min Buy Signals | 3 | Out of 11 strategies |
+| Min Sell Signals | 3 | Out of 11 strategies |
 
-## Account Requirements
-
-- **Minimum**: 5,000 USC ($50)
-- **Recommended**: 10,000+ USC
-- **Broker**: HFM Cent Account
-- **Symbol**: XAUUSDc
+---
 
 ## Installation
 
-1. Copy `EMA_RSI_Gold_EA.mq5` to your MT5 `Experts` folder
+1. Copy `.mq5` file to: `MQL5/Experts/`
 2. Restart MetaTrader 5
-3. Drag EA onto XAUUSDc H1 chart
-4. Enable Auto Trading
+3. Open Navigator (Ctrl+N)
+4. Expand Expert Advisors
+5. Drag EA onto chart
+6. Enable Auto Trading (toolbar button)
+7. Allow live trading in EA properties
 
 ## Backtesting
 
 1. Open Strategy Tester (Ctrl+R)
-2. Select `EMA_RSI_Gold_EA`
-3. Symbol: XAUUSDc
-4. Period: H1
-5. Date range: 2022-01-01 to 2024-12-31
-6. Model: Every tick based on real ticks
-7. Deposit: 5000 (USC)
-
-## Optimization
-
-Test these parameter ranges:
-
-- Fast EMA: 10, 15, 20, 21, 25
-- Slow EMA: 40, 45, 50, 55, 60
-- RSI Thresholds: 45/55, 50/50, 55/45
-- ATR Multipliers: 1.0/2.0, 1.5/3.0, 2.0/4.0
+2. Select EA from dropdown
+3. Choose symbol and timeframe
+4. Set date range (at least 1 year)
+5. Model: "Every tick based on real ticks"
+6. Click Start
 
 ## Risk Warnings
 
 - ⚠️ Past performance does not guarantee future results
-- ⚠️ Start with demo account first
+- ⚠️ Always start with a demo account
 - ⚠️ Never risk more than 2% per trade
 - ⚠️ Monitor during high-impact news events
+- ⚠️ These EAs are for educational purposes
+
+## Development Notes
+
+Built from deep analysis of:
+- 326 gold trading articles
+- 109 non-lagging strategy articles
+- 531 total indexed articles
+- MQL5 Book (341 chapters)
+- NeuroBook (9 chapters)
+
+Key insights incorporated:
+- Smart Money Concepts (institutional trading logic)
+- Market structure analysis (BOS/CHoCH)
+- Fair Value Gaps and Order Blocks
+- Multi-timeframe confirmation
+- Sentiment-based strategy selection

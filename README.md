@@ -1,23 +1,46 @@
-# MQL5 Expert Advisors — Knowledge Base
+# MQL5 Expert Advisors — Knowledge Base & Trading Systems
 
-A comprehensive MQL5 knowledge base for building Expert Advisors on MetaTrader 5. Scraped and organized from [mql5.com](https://www.mql5.com) official resources.
+A comprehensive MQL5 knowledge base for building Expert Advisors on MetaTrader 5, with **production-ready EAs** based on deep analysis of 1,000+ MQL5 articles.
 
 ## 📁 Repository Structure
 
 ```
 mql5-expert-advisors/
-├── book/              # MQL5 Book — 341 chapters (from official PDF)
-├── neurobook/         # NeuroBook — Neural networks for trading (9 chapters)
-├── docs/              # MQL5 Language Reference (8 organized sections)
+├── experts/           # Production Expert Advisors
+│   ├── Gold_MultiStrategy_EA.mq5      # 11-strategy gold EA (v2.0)
+│   ├── SmartMoney_Concepts_EA.mq5     # SMC-based EA (v1.0)
+│   └── README.md      # EA documentation
+├── book/              # MQL5 Book — 341 chapters
+├── neurobook/         # Neural networks for trading (9 chapters)
+├── docs/              # MQL5 Language Reference (8 sections)
 ├── articles/          # Articles index + 22 full EA-focused articles
-├── code/              # Code library — EA examples, indicators, utilities
-│   ├── eas/           # Expert Advisor implementations (.mq5)
-│   ├── index.md       # Full code library index (43 entries)
-│   └── ...
-└── references/        # Quick reference guides (coming soon)
+├── code/              # Code library — EA examples, indicators
+├── data/              # Scraped article data (190MB)
+└── tools/             # Scraping utilities
 ```
 
-## 📚 Sources
+## 🤖 Expert Advisors
+
+### SmartMoney Concepts EA (v1.0)
+**Strategies**: BOS + CHoCH + FVG + Order Blocks + Liquidity Sweeps + Session Breakouts
+
+Non-lagging, price-action-based EA using institutional trading concepts:
+- **Market Structure**: Break of Structure (BOS) and Change of Character (CHoCH)
+- **Fair Value Gaps**: FVG detection with mitigation/inversion (IFVG)
+- **Order Blocks**: Institutional supply/demand zones
+- **Liquidity Sweeps**: Buy/Sell Side Liquidity detection
+- **Session Breakouts**: Opening Range + Midnight Range
+- **Sentiment Engine**: Multi-timeframe strategy switching (H4/H1/M15)
+
+### Gold Multi-Strategy EA (v2.0)
+**Strategies**: 11 strategies with ADX/Multi-TF filters
+
+Signal-voting system where multiple strategies must agree:
+- EMA RSI Crossover, Trend + S/R Bounce, Price Breakout
+- RSI Extreme Reversal, MACD Trend, Bollinger Squeeze
+- Heikin Ashi, Donchian, Golden Cross, Divergence, SMC
+
+## 📚 Knowledge Base Sources
 
 | Source | Content | Files |
 |--------|---------|-------|
@@ -29,13 +52,21 @@ mql5-expert-advisors/
 
 ## 🚀 Quick Start
 
-### Building Your First EA
+### For EA Development
 
 1. **Learn the basics**: Start with `book/001-introduction-to-mql5-and-development-environment.md`
 2. **Understand trading functions**: Read `docs/03-trading-functions.md`
 3. **Study event handlers**: See `docs/02-event-handlers.md`
-4. **Look at examples**: Browse `code/eas/` for working EA implementations
+4. **Look at examples**: Browse `experts/` for production EA implementations
 5. **Read articles**: Check `articles/index.md` for deep dives on specific strategies
+
+### For Using the EAs
+
+1. Copy `.mq5` file to your MT5 `Experts` folder
+2. Restart MetaTrader 5
+3. Drag EA onto chart (XAUUSDc H1 for Gold EA, any symbol for SMC EA)
+4. Enable Auto Trading
+5. Start with demo account first!
 
 ### Key MQL5 Concepts
 
