@@ -102,7 +102,9 @@ void OnTick()
 //+------------------------------------------------------------------+
 bool GetIndicatorValues()
 {
-   if(CopyBuffer(handleRSI, 0, 0, InpDivLookback + 5, rsiValues) < InpDivLookback + 5) return false;
+   // Copy enough data for both signal check and divergence lookback
+   int rsiCopySize = 2 * InpDivLookback + 5;
+   if(CopyBuffer(handleRSI, 0, 0, rsiCopySize, rsiValues) < rsiCopySize) return false;
    if(CopyBuffer(handleTrendEMA, 0, 0, 5, trendEMA) < 5) return false;
    return true;
 }
@@ -162,18 +164,19 @@ int CheckRSISignal()
 //+------------------------------------------------------------------+
 bool CheckBullishDivergence()
 {
-   // Price making lower lows, RSI making higher lows = bullish divergence
-   double priceLow1 = iLow(_Symbol, PERIOD_CURRENT, iLowest(_Symbol, PERIOD_CURRENT, MODE_LOW, InpDivLookback, 1));
-   double priceLow2 = iLow(_Symbol, PERIOD_CURRENT, iLowest(_Symbol, PERIOD_CURRENT, MODE_LOW, InpDivLookback, InpDivLookback + 1));
+   // Simplified divergence: compare RSI at current low vs previous low
+   // Look for RSI making higher lows while price makes lower lows
    
-   int rsiLowBar1 = iLowest(_Symbol, PERIOD_CURRENT, MODE_LOW, InpDivLookback, 1);
-   int rsiLowBar2 = iLowest(_Symbol, PERIOD_CURRENT, MODE_LOW, InpDivLookback, InpDivLookback + 1);
+   double close1 = iClose(_Symbol, PERIOD_CURRENT, 1);
+   double close2 = iClose(_Symbol, PERIOD_CURRENT, 2);
+   double close3 = iClose(_Symbol, PERIOD_CURRENT, 3);
    
-   double rsiLow1 = rsiValues[rsiLowBar1];
-   double rsiLow2 = rsiValues[rsiLowBar2];
+   double rsi1 = rsiValues[1];
+   double rsi2 = rsiValues[2];
+   double rsi3 = rsiValues[3];
    
-   // Bullish divergence: price lower low, RSI higher low
-   if(priceLow1 < priceLow2 && rsiLow1 > rsiLow2)
+   // Bullish divergence: price going down, RSI going up
+   if(close1 < close3 && rsi1 > rsi3 && rsi1 < InpOversold + 10)
    {
       Print("Bullish Divergence Detected");
       return true;
@@ -185,18 +188,19 @@ bool CheckBullishDivergence()
 //+------------------------------------------------------------------+
 bool CheckBearishDivergence()
 {
-   // Price making higher highs, RSI making lower highs = bearish divergence
-   double priceHigh1 = iHigh(_Symbol, PERIOD_CURRENT, iHighest(_Symbol, PERIOD_CURRENT, MODE_HIGH, InpDivLookback, 1));
-   double priceHigh2 = iHigh(_Symbol, PERIOD_CURRENT, iHighest(_Symbol, PERIOD_CURRENT, MODE_HIGH, InpDivLookback, InpDivLookback + 1));
+   // Simplified divergence: compare RSI at current high vs previous high
+   // Look for RSI making lower highs while price makes higher highs
    
-   int rsiHighBar1 = iHighest(_Symbol, PERIOD_CURRENT, MODE_HIGH, InpDivLookback, 1);
-   int rsiHighBar2 = iHighest(_Symbol, PERIOD_CURRENT, MODE_HIGH, InpDivLookback, InpDivLookback + 1);
+   double close1 = iClose(_Symbol, PERIOD_CURRENT, 1);
+   double close2 = iClose(_Symbol, PERIOD_CURRENT, 2);
+   double close3 = iClose(_Symbol, PERIOD_CURRENT, 3);
    
-   double rsiHigh1 = rsiValues[rsiHighBar1];
-   double rsiHigh2 = rsiValues[rsiHighBar2];
+   double rsi1 = rsiValues[1];
+   double rsi2 = rsiValues[2];
+   double rsi3 = rsiValues[3];
    
-   // Bearish divergence: price higher high, RSI lower high
-   if(priceHigh1 > priceHigh2 && rsiHigh1 < rsiHigh2)
+   // Bearish divergence: price going up, RSI going down
+   if(close1 > close3 && rsi1 < rsi3 && rsi1 > InpOverbought - 10)
    {
       Print("Bearish Divergence Detected");
       return true;

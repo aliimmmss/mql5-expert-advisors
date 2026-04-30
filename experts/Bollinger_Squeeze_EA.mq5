@@ -347,6 +347,7 @@ void ClosePositions(ENUM_ORDER_TYPE type)
                   if(result.retcode == TRADE_RETCODE_DONE)
                      Print("Closed position #", ticket);
                }
+            }
          }
       }
    }
