@@ -214,6 +214,9 @@ string         lastStrategy;
 datetime       lastBarTime;
 int            currentBarIndex;
 
+// Indicator handles
+int            g_ma200Handle = INVALID_HANDLE;
+
 //+------------------------------------------------------------------+
 //| Expert initialization function                                    |
 //+------------------------------------------------------------------+
@@ -255,6 +258,11 @@ int OnInit() {
    lastMidnightReset = 0;
    lastSentimentUpdate = 0;
    
+   // Create indicator handles
+   g_ma200Handle = iMA(_Symbol, InpHigherTF, 200, 0, MODE_EMA, PRICE_CLOSE);
+   if(g_ma200Handle == INVALID_HANDLE)
+      Print("Failed to create MA200 handle for ", EnumToString(InpHigherTF));
+   
    Print("SmartMoney Concepts EA Initialized");
    Print("Strategies: BOS=", InpUseBOS, " CHoCH=", InpUseCHoCH, 
          " FVG=", InpUseFVG, " IFVG=", InpUseIFVG,
@@ -268,6 +276,10 @@ int OnInit() {
 //| Expert deinitialization function                                  |
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason) {
+   // Release indicator handles
+   if(g_ma200Handle != INVALID_HANDLE)
+      IndicatorRelease(g_ma200Handle);
+   
    // Clean up visual objects
    ObjectsDeleteAll(0, "SMC_");
    ObjectsDeleteAll(0, "FVG_");
@@ -1035,7 +1047,13 @@ void CalculateSentiment() {
 //| Get Higher Timeframe Bias                                         |
 //+------------------------------------------------------------------+
 int GetHigherTFBias() {
-   double ma200 = iMA(_Symbol, InpHigherTF, 200, 0, MODE_EMA, PRICE_CLOSE, 0);
+   double ma200Buf[1];
+   if(CopyBuffer(g_ma200Handle, 0, 0, 1, ma200Buf) <= 0) {
+      Print("Failed to copy MA200 buffer");
+      return 0;
+   }
+   double ma200 = ma200Buf[0];
+   
    double currentPrice = iClose(_Symbol, InpHigherTF, 0);
    
    double deviation = MathAbs(currentPrice - ma200) / ma200;
@@ -1366,7 +1384,7 @@ void ExecuteTrade(ENUM_ORDER_TYPE type, string strategy, double price) {
    bool result = trade.PositionOpen(_Symbol, type, InpLotSize, price, sl, tp, comment);
    
    if(result) {
-      long ticket = trade.ResultOrder();
+      ulong ticket = trade.ResultOrder();
       Print("Trade executed: ", EnumToString(type), 
             " | Strategy: ", strategy,
             " | Sentiment: ", currentSentimentText,
