@@ -14,7 +14,7 @@ input group "=== MACD SETTINGS ==="
 input int      InpMACDFast       = 12;           // MACD Fast EMA
 input int      InpMACDSlow       = 26;           // MACD Slow EMA
 input int      InpMACDSignal     = 9;            // MACD Signal Line
-input bool     InpUseHistogram   = true;         // Use Histogram Crossover
+input bool     InpUseHistogram   = false;         // Use Histogram Crossover
 
 input group "=== TREND CONFIRMATION ==="
 input int      InpTrendEMA       = 200;          // Trend EMA Period
@@ -114,9 +114,9 @@ void OnTick()
 //+------------------------------------------------------------------+
 bool GetIndicatorValues()
 {
-   if(CopyBuffer(handleMACD, 0, 0, 5, macdMain) < 5) return false;
-   if(CopyBuffer(handleMACD, 1, 0, 5, macdSignal) < 5) return false;
-   if(CopyBuffer(handleMACD, 2, 0, 5, macdHistogram) < 5) return false;
+   if(CopyBuffer(handleMACD, 0, 0, 6, macdMain) < 6) return false;
+   if(CopyBuffer(handleMACD, 1, 0, 6, macdSignal) < 6) return false;
+   if(CopyBuffer(handleMACD, 2, 0, 6, macdHistogram) < 6) return false;
    if(CopyBuffer(handleTrendEMA, 0, 0, 5, trendEMA) < 5) return false;
    if(CopyBuffer(handleATR, 0, 0, 3, atrValues) < 3) return false;
    if(CopyBuffer(handleMomentum, 0, 0, 5, momentum) < 5) return false;
@@ -150,26 +150,27 @@ int CheckMACDSignal()
    
    if(InpUseHistogram)
    {
-      // Histogram crossover
+      // Histogram direction change (momentum shift)
       double hist1 = macdHistogram[1];
       double hist2 = macdHistogram[2];
+      double hist3 = macdHistogram[3];
       
-      // BUY: Histogram crosses above zero
-      if(hist2 <= 0 && hist1 > 0)
+      // BUY: Histogram positive and turning up (direction change from decreasing to increasing)
+      if(hist1 > 0 && hist1 > hist2 && hist2 < hist3)
       {
          if(isUptrend && momentumUp)
          {
-            Print("BUY: MACD Histogram crossed above zero");
+            Print("BUY: MACD Histogram momentum shift up");
             return 1;
          }
       }
       
-      // SELL: Histogram crosses below zero
-      if(hist2 >= 0 && hist1 < 0)
+      // SELL: Histogram negative and turning down (direction change from increasing to decreasing)
+      if(hist1 < 0 && hist1 < hist2 && hist2 > hist3)
       {
          if(isDowntrend && momentumDown)
          {
-            Print("SELL: MACD Histogram crossed below zero");
+            Print("SELL: MACD Histogram momentum shift down");
             return -1;
          }
       }

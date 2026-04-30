@@ -99,7 +99,7 @@ void OnTick()
 bool GetIndicatorValues()
 {
    if(CopyBuffer(handleTrendEMA, 0, 0, 5, trendEMA) < 5) return false;
-   if(CopyBuffer(handleATR, 0, 0, 3, atrValues) < 3) return false;
+   if(CopyBuffer(handleATR, 0, 0, 12, atrValues) < 12) return false;
    return true;
 }
 
@@ -108,7 +108,7 @@ int CheckBreakout()
 {
    // Find recent high and low
    int highestBar = iHighest(_Symbol, PERIOD_CURRENT, MODE_HIGH, InpLookback, 1);
-   int lowestBar  = iHighest(_Symbol, PERIOD_CURRENT, MODE_LOW, InpLookback, 1);
+   int lowestBar  = iLowest(_Symbol, PERIOD_CURRENT, MODE_LOW, InpLookback, 1);
    
    double recentHigh = iHigh(_Symbol, PERIOD_CURRENT, highestBar);
    double recentLow  = iLow(_Symbol, PERIOD_CURRENT, lowestBar);

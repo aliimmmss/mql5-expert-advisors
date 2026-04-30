@@ -17,7 +17,7 @@ input int      InpSlowEMA        = 50;           // Slow EMA (H1)
 
 input group "=== SUPPORT/RESISTANCE ==="
 input int      InpSRPeriod       = 20;           // S/R Lookback Period
-input int      InpSRZone         = 50;           // S/R Zone Size (points)
+input int      InpSRZone         = 500;          // S/R Zone Size (points)
 input int      InpBounceConfirm  = 2;            // Bounce Confirmation Bars
 
 input group "=== RISK MANAGEMENT ==="
