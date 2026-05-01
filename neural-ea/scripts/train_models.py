@@ -119,13 +119,13 @@ def train_lstm_trend(df: pd.DataFrame, timesteps: int = 5):
     trending_pct = (predictions > 30).mean() * 100
     print(f"Predicted trending (ADX > 30): {trending_pct:.1f}% of bars")
     
-    # Convert to ONNX via SavedModel (tf2onnx from_keras broken with Keras 3.x)
+    # Convert to ONNX via tf.function tracing (works with all tf2onnx + Keras 3.x)
     import tf2onnx
     import onnx
     import tensorflow as tf
     import tempfile, shutil
     
-    # Convert Sequential to Functional for ONNX export
+    # Rebuild model and copy weights
     func_model = keras.Sequential([
         keras.layers.LSTM(50, input_shape=(timesteps, len(feature_cols))),
         keras.layers.Dense(1)
@@ -134,13 +134,15 @@ def train_lstm_trend(df: pd.DataFrame, timesteps: int = 5):
     func_model.set_weights(model.get_weights())
     
     onnx_path = str(MODELS_DIR / 'lstm_trend.onnx')
-    tmp_dir = tempfile.mkdtemp()
-    try:
-        func_model.export(tmp_dir)
-        onnx_model, _ = tf2onnx.convert.from_saved_model(tmp_dir, opset=15)
-        onnx.save_model(onnx_model, onnx_path)
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+    
+    @tf.function(input_signature=[tf.TensorSpec((None, timesteps, len(feature_cols)), tf.float32)])
+    def predict(x):
+        return func_model(x)
+    
+    # Get concrete function and convert
+    concrete_func = predict.get_concrete_function()
+    onnx_model, _ = tf2onnx.convert.from_function(concrete_func, input_signature=concrete_func.inputs, opset=15)
+    onnx.save_model(onnx_model, onnx_path)
     print(f"\n✅ LSTM Trend model saved to {onnx_path}")
     
     # Save scaler params for MQL5
@@ -380,20 +382,20 @@ def train_price_predictor(df: pd.DataFrame, timesteps: int = 120):
             print(f"  Confidence > {threshold}: {mask.sum()} samples, "
                   f"accuracy {correct*100:.1f}%")
     
-    # Export to ONNX via SavedModel (tf2onnx from_keras broken with Keras 3.x)
+    # Export to ONNX via tf.function tracing (works with all tf2onnx + Keras 3.x)
     import tf2onnx
     import onnx
     import tensorflow as tf
-    import tempfile, shutil
     
     onnx_path = str(MODELS_DIR / 'price_predictor.onnx')
-    tmp_dir = tempfile.mkdtemp()
-    try:
-        model.export(tmp_dir)
-        onnx_model, _ = tf2onnx.convert.from_saved_model(tmp_dir, opset=15)
-        onnx.save_model(onnx_model, onnx_path)
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+    
+    @tf.function(input_signature=[tf.TensorSpec((None, timesteps, len(feature_cols)), tf.float32)])
+    def predict_price(x):
+        return model(x)
+    
+    concrete_func = predict_price.get_concrete_function()
+    onnx_model, _ = tf2onnx.convert.from_function(concrete_func, input_signature=concrete_func.inputs, opset=15)
+    onnx.save_model(onnx_model, onnx_path)
     print(f"\n✅ Price Predictor model saved to {onnx_path}")
     
     return model, scaler, history
