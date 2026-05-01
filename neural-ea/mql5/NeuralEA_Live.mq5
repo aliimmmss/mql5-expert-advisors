@@ -336,7 +336,7 @@ string SendAndReceive(const string &json)
    ArrayCopy(sendBuf, header, 0, 0, 4);
    ArrayCopy(sendBuf, data, 4, 0, len);
 
-   if(SocketSend(socketHandle, sendBuf) != 4 + len)
+   if(SocketSend(socketHandle, sendBuf, (uint)ArraySize(sendBuf)) != 4 + len)
    {
       Print("ERROR: SocketSend failed");
       DisconnectFromServer();
@@ -390,7 +390,7 @@ int SocketReadExact(int handle, uchar &result[], int exactBytes, int timeout)
 
       uchar buf[];
       //--- Use MQL5 built-in SocketRead(handle, buf[], timeout_ms)
-      int n = SocketRead(handle, buf, (uint)timeout);
+      int n = SocketRead(handle, buf, 4096, (uint)timeout);
       if(n <= 0) { Sleep(1); continue; }
 
       int oldSize = ArraySize(result);
