@@ -138,13 +138,13 @@ void OnTimer()
 //+------------------------------------------------------------------+
 void CheckServerStatus()
 {
-   string headers = "Content-Type: application/json\r\n";
+   string headers = "";
    string resultHeaders;
-   char resultData[];
-   char postData[];
+   uchar resultData[];
+   uchar postData[];
 
    int result = WebRequest("GET", InpServerURL + "/status", headers, InpTimeout,
-                           postData, resultHeaders, resultData);
+                           postData, resultData, resultHeaders);
 
    if(result == -1)
    {
@@ -171,16 +171,19 @@ string SendWebRequest(const string &json)
 {
    string headers = "Content-Type: application/json\r\n";
    string resultHeaders;
-   char resultData[];
-   char postData[];
+   uchar resultData[];
+   uchar postData[];
 
-   //--- Convert JSON string to char array
+   //--- Convert JSON string to uchar array
    StringToCharArray(json, postData, 0, WHOLE_ARRAY, CP_UTF8);
-   int postLen = StringLen(json);
+   // Remove null terminator that StringToCharArray adds
+   int len = ArraySize(postData);
+   if(len > 0 && postData[len-1] == 0)
+      ArrayResize(postData, len-1);
 
    //--- Send POST request
    int result = WebRequest("POST", InpServerURL + "/predict", headers, InpTimeout,
-                           postData, resultHeaders, resultData);
+                           postData, resultData, resultHeaders);
 
    if(result == -1)
    {
