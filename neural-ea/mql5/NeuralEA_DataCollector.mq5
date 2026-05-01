@@ -33,7 +33,7 @@ int OnInit()
    handleSMA50  = iMA(InpSymbol, InpTF, 50, 0, MODE_SMA, PRICE_CLOSE);
    handleSMA200 = iMA(InpSymbol, InpTF, 200, 0, MODE_SMA, PRICE_CLOSE);
    handleBB   = iBands(InpSymbol, InpTF, 20, 0, 2.0, PRICE_CLOSE);
-   handleMFI  = iMFI(InpSymbol, InpTF, 14);
+   handleMFI  = iMFI(InpSymbol, InpTF, 14, VOLUME_TICK);
    handleCCI  = iCCI(InpSymbol, InpTF, 14, PRICE_TYPICAL);
    handleStoch = iStochastic(InpSymbol, InpTF, 14, 3, 3, MODE_SMA, STO_LOWHIGH);
    handleWPR  = iWPR(InpSymbol, InpTF, 14);

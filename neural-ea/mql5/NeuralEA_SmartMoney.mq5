@@ -129,7 +129,7 @@ int OnInit()
    handleSMA50  = iMA(_Symbol, PERIOD_CURRENT, 50, 0, MODE_SMA, PRICE_CLOSE);
    handleSMA200 = iMA(_Symbol, PERIOD_CURRENT, 200, 0, MODE_SMA, PRICE_CLOSE);
    handleBB   = iBands(_Symbol, PERIOD_CURRENT, 20, 0, 2.0, PRICE_CLOSE);
-   handleMFI  = iMFI(_Symbol, PERIOD_CURRENT, 14);
+   handleMFI  = iMFI(_Symbol, PERIOD_CURRENT, 14, VOLUME_TICK);
    handleCCI  = iCCI(_Symbol, PERIOD_CURRENT, 14, PRICE_TYPICAL);
    handleStoch = iStochastic(_Symbol, PERIOD_CURRENT, 14, 3, 3, MODE_SMA, STO_LOWHIGH);
    handleWPR  = iWPR(_Symbol, PERIOD_CURRENT, 14);
