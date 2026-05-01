@@ -132,12 +132,14 @@ void OnTick()
 //+------------------------------------------------------------------+
 void CollectData()
 {
-   int handle = FileOpen(InpFileName, FILE_WRITE|FILE_CSV|FILE_ANSI, ',');
+   // Use FILE_COMMON so file is accessible from any terminal/tester
+   int handle = FileOpen(InpFileName, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_COMMON, ',');
    if(handle == INVALID_HANDLE)
    {
-      Print("Error opening file: ", InpFileName);
+      Print("ERROR opening file: ", InpFileName, " ErrorCode=", GetLastError());
       return;
    }
+   Print("File opened successfully: ", InpFileName);
    
    // Write header
    FileWrite(handle,
@@ -300,5 +302,6 @@ void CollectData()
    
    FileClose(handle);
    Print("Collected ", collected_count, " rows → ", InpFileName);
+   Print("File saved to Common folder. In MT5: File → Open Common Data Folder → MQL5 → Files");
 }
 //+------------------------------------------------------------------+
