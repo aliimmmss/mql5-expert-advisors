@@ -4,6 +4,41 @@ Production-ready Expert Advisors for MetaTrader 5, built from analysis of 1,000+
 
 ## Available EAs
 
+### 0. NeuralEA_Live (v2.0) — Neural-Enhanced Trading
+
+**File**: `../neural-ea/mql5/NeuralEA_Live.mq5`
+**Best for**: XAUUSDc, H1 timeframe
+**Approach**: Smart Money Concepts + 3 ML models via Python server
+
+**Neural Models:**
+- LSTM Trend Filter — Predicts ADX to filter ranging markets
+- CatBoost Signal Filter — Win probability from 30 features
+- Price Predictor — CNN+LSTM for directional bias
+
+**Architecture:**
+```
+Layer 1: SMC Signal → BOS/FVG/OB/Liquidity detection
+Layer 2: Neural Filter → LSTM + CatBoost + Price Predictor
+Layer 3: Signal Combination → Weighted vote → BUY/SELL/HOLD
+Layer 4: Trade Execution → ATR-based SL/TP
+```
+
+**Key Features:**
+- HTTP WebRequest to Python server (port 5556)
+- Automatic server reconnection
+- Chart display with model outputs
+- Trailing stop management
+- Live model retraining support
+
+**Setup:**
+1. Start Python server: `python neural-ea/scripts/server.py`
+2. Add `http://127.0.0.1:5556` to MT5 WebRequest allowed URLs
+3. Compile and attach to chart
+
+See `../neural-ea/README.md` for full documentation.
+
+---
+
 ### 1. SmartMoney Concepts EA (v1.0)
 
 **File**: `SmartMoney_Concepts_EA.mq5`
@@ -144,3 +179,4 @@ Key insights incorporated:
 - Fair Value Gaps and Order Blocks
 - Multi-timeframe confirmation
 - Sentiment-based strategy selection
+- Neural network filtering (LSTM, CatBoost, CNN+LSTM)

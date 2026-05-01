@@ -10,6 +10,12 @@ mql5-expert-advisors/
 │   ├── Gold_MultiStrategy_EA.mq5      # 11-strategy gold EA (v2.0)
 │   ├── SmartMoney_Concepts_EA.mq5     # SMC-based EA (v1.0)
 │   └── README.md      # EA documentation
+├── neural-ea/         # Neural-Enhanced Trading System
+│   ├── mql5/          # MQL5 EAs (Live, SmartMoney, DataCollector)
+│   ├── scripts/       # Python server, training, live trainer
+│   ├── models/        # Trained ML models (LSTM, CatBoost, Price Predictor)
+│   ├── data/          # Training data from MT5
+│   └── README.md      # Neural EA documentation
 ├── book/              # MQL5 Book — 341 chapters
 ├── neurobook/         # Neural networks for trading (9 chapters)
 ├── docs/              # MQL5 Language Reference (8 sections)
@@ -20,6 +26,27 @@ mql5-expert-advisors/
 ```
 
 ## 🤖 Expert Advisors
+
+### Neural-Enhanced Trading System (NEW!)
+
+**2 EAs** — NeuralEA_Live (Python server) + NeuralEA_SmartMoney (ONNX inference)
+
+| EA | Architecture | Inference | Best For |
+|----|-------------|-----------|----------|
+| **NeuralEA_Live** | SMC + 3 ML models via HTTP | Python server (port 5556) | Full ML pipeline, live retraining |
+| **NeuralEA_SmartMoney** | SMC + 3 ONNX models | In-MT5 ONNX Runtime | Standalone, no external deps |
+
+**Neural Models:**
+- **LSTM Trend Filter** — Predicts ADX to filter ranging markets
+- **CatBoost Signal Filter** — Win probability from 30 oscillator features
+- **Price Predictor** — CNN+LSTM hybrid for directional bias
+
+**Architecture:**
+```
+SMC Signal (BOS/FVG/OB/Liquidity) → Neural Filter (3 models) → Trade Execution
+```
+
+See `neural-ea/README.md` for full documentation.
 
 ### SmartMoney Concepts EA (v1.0)
 **Strategies**: BOS + CHoCH + FVG + Order Blocks + Liquidity Sweeps + Session Breakouts
@@ -52,15 +79,32 @@ Signal-voting system where multiple strategies must agree:
 
 ## 🚀 Quick Start
 
-### For EA Development
+### Neural EA Setup (Recommended)
 
-1. **Learn the basics**: Start with `book/001-introduction-to-mql5-and-development-environment.md`
-2. **Understand trading functions**: Read `docs/03-trading-functions.md`
-3. **Study event handlers**: See `docs/02-event-handlers.md`
-4. **Look at examples**: Browse `experts/` for production EA implementations
-5. **Read articles**: Check `articles/index.md` for deep dives on specific strategies
+**Option A: Python Server (NeuralEA_Live)**
+```bash
+# 1. Train models
+cd neural-ea
+pip install -r requirements.txt
+python scripts/train_models.py --data data/neural_training_data.csv --models all
 
-### For Using the EAs
+# 2. Start prediction server (HTTP on 5556, TCP on 5555)
+python scripts/server.py
+
+# 3. In MT5: Add http://127.0.0.1:5556 to WebRequest allowed URLs
+# 4. Compile NeuralEA_Live.mq5 in MetaEditor
+# 5. Attach to chart (XAUUSDc H1 recommended)
+```
+
+**Option B: ONNX Inference (NeuralEA_SmartMoney)**
+```bash
+# 1. Train models (same as above)
+# 2. Copy .onnx files to MT5 MQL5/Files/
+# 3. Compile NeuralEA_SmartMoney.mq5 in MetaEditor
+# 4. Attach to chart — no external server needed
+```
+
+### Traditional EAs
 
 1. Copy `.mq5` file to your MT5 `Experts` folder
 2. Restart MetaTrader 5
@@ -68,7 +112,13 @@ Signal-voting system where multiple strategies must agree:
 4. Enable Auto Trading
 5. Start with demo account first!
 
-### Key MQL5 Concepts
+## 📊 Forward Testing Status
+
+Currently running forward tests:
+- **NeuralEA_Live** — Connected to Python server via WebRequest
+- **SmartMoney_Concepts_EA** — Running on separate broker
+
+## Key MQL5 Concepts
 
 ```mql5
 // Every EA needs these event handlers:
@@ -79,13 +129,14 @@ void OnTrade()        { /* trade event */ }
 void OnTimer()        { /* timer event */ }
 ```
 
-### Essential Trading Functions
+## Essential Trading Functions
 
 - `OrderSend(request, result)` — Send orders
 - `PositionSelect(symbol)` — Select position
 - `SymbolInfoDouble(symbol, SYMBOL_ASK)` — Get price
 - `AccountInfoDouble(ACCOUNT_BALANCE)` — Account info
 - `iMA()`, `iRSI()`, `iMACD()` — Technical indicators
+- `WebRequest()` — HTTP communication with external servers
 
 ## 🧠 NeuroBook Highlights
 
