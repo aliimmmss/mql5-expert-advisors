@@ -1,17 +1,15 @@
 //+------------------------------------------------------------------+
 //| NeuralEA_Live.mq5                                                 |
-//| Expert Advisor communicating with Python server via TCP sockets   |
-//| Connects to localhost:5555, sends OHLC+indicators, receives       |
-//| predictions (lstm_trend, catboost_prob, price_direction, signal)  |
+//| Expert Advisor communicating with Python server via HTTP          |
+//| Uses WebRequest to http://127.0.0.1:5556/predict                  |
 //+------------------------------------------------------------------+
 #property copyright "Neural Trading System"
-#property version   "1.00"
+#property version   "2.00"
 #property strict
 
 //--- Input parameters
-input string   InpServerHost     = "127.0.0.1";    // Server host
-input int      InpServerPort     = 5555;            // Server port
-input int      InpTimeout        = 5000;            // Socket timeout (ms)
+input string   InpServerURL      = "http://127.0.0.1:5556";  // Server URL
+input int      InpTimeout        = 10000;            // WebRequest timeout (ms)
 input int      InpBarsCount      = 120;             // Number of bars to send
 input double   InpLotSize        = 0.01;            // Lot size
 input int      InpMaxPositions   = 3;               // Max open positions
@@ -21,7 +19,7 @@ input double   InpTrendThreshold = 0.6;             // Min trend strength to tra
 input double   InpProbThreshold  = 0.55;            // Min win probability to trade
 input double   InpDirThreshold   = 0.55;            // Min price direction to trade
 input int      InpMagicNumber    = 202501;          // Magic number
-input int      InpTimerInterval  = 1000;            // Timer interval (ms)
+input int      InpTimerInterval  = 5000;            // Timer interval (ms)
 input bool     InpEnableTrailing = true;            // Enable trailing stop
 input int      InpTrailStart     = 300;             // Trailing start (points)
 input int      InpTrailStep      = 100;             // Trailing step (points)
@@ -31,26 +29,16 @@ int handleADX, handleRSI, handleMACD, handlePSAR, handleATR;
 int handleSMA50, handleSMA200, handleBB, handleMFI, handleCCI;
 int handleStoch, handleWPR, handleOBV, handleAD;
 
-//--- Socket
-int socketHandle = INVALID_HANDLE;
-bool isConnected = false;
-datetime lastConnectAttempt = 0;
-
 //--- State
 datetime lastBarTime = 0;
 string lastSignal = "HOLD";
+datetime lastStatusCheck = 0;
 
 //+------------------------------------------------------------------+
 //| Expert initialization                                             |
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   if(!TerminalInfoInteger(TERMINAL_DLLS_ALLOWED))
-   {
-      Print("ERROR: DLL imports not allowed. Enable in Tools -> Options -> Expert Advisors");
-      return INIT_FAILED;
-   }
-
    //--- Create indicator handles
    handleADX   = iADX(_Symbol, PERIOD_CURRENT, 14);
    handleRSI   = iRSI(_Symbol, PERIOD_CURRENT, 14, PRICE_CLOSE);
@@ -81,10 +69,11 @@ int OnInit()
    //--- Start timer
    EventSetMillisecondTimer(InpTimerInterval);
 
-   //--- Initial connection
-   ConnectToServer();
+   //--- Check server status
+   CheckServerStatus();
 
    Print("NeuralEA_Live initialized. Symbol=", _Symbol, " Period=", EnumToString(Period()));
+   Print("Server URL: ", InpServerURL, "/predict");
    return INIT_SUCCEEDED;
 }
 
@@ -94,7 +83,6 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    EventKillTimer();
-   DisconnectFromServer();
 
    //--- Release indicator handles
    IndicatorRelease(handleADX);
@@ -118,13 +106,11 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTimer()
 {
-   //--- Manage connection
-   if(!SocketIsConnected(socketHandle))
+   //--- Check server status every 30 seconds
+   if(TimeCurrent() - lastStatusCheck > 30)
    {
-      isConnected = false;
-      if(TimeCurrent() - lastConnectAttempt > 5) // Retry every 5 seconds
-         ConnectToServer();
-      if(!isConnected) return;
+      CheckServerStatus();
+      lastStatusCheck = TimeCurrent();
    }
 
    //--- Manage trailing stop
@@ -140,7 +126,7 @@ void OnTimer()
    string jsonData = CollectMarketData();
    if(jsonData == "") return;
 
-   string response = SendAndReceive(jsonData);
+   string response = SendWebRequest(jsonData);
    if(response == "") return;
 
    //--- Parse response and trade
@@ -148,46 +134,66 @@ void OnTimer()
 }
 
 //+------------------------------------------------------------------+
-//| Connect to Python server                                          |
+//| Check server status via HTTP GET                                  |
 //+------------------------------------------------------------------+
-void ConnectToServer()
+void CheckServerStatus()
 {
-   lastConnectAttempt = TimeCurrent();
+   string headers = "Content-Type: application/json\r\n";
+   string resultHeaders;
+   char resultData[];
+   char postData[];
 
-   if(socketHandle != INVALID_HANDLE)
-      SocketClose(socketHandle);
+   int result = WebRequest("GET", InpServerURL + "/status", headers, InpTimeout,
+                           postData, resultHeaders, resultData);
 
-   socketHandle = SocketCreate();
-   if(socketHandle == INVALID_HANDLE)
+   if(result == -1)
    {
-      Print("ERROR: SocketCreate failed, error=", GetLastError());
-      return;
+      int error = GetLastError();
+      Print("WARN: Server status check failed, error=", error);
+      if(error == 4060)
+         Print("  → Add '", InpServerURL, "' to Tools → Options → Expert Advisors → Allow WebRequest for listed URL");
+      else if(error == 5002)
+         Print("  → Check that server is running on port 5556");
+      Comment("Server: DISCONNECTED (error ", error, ")");
    }
-
-   if(!SocketConnect(socketHandle, InpServerHost, InpServerPort, InpTimeout))
+   else
    {
-      Print("WARN: Connection to ", InpServerHost, ":", InpServerPort, " failed, error=", GetLastError());
-      SocketClose(socketHandle);
-      socketHandle = INVALID_HANDLE;
-      isConnected = false;
-      return;
+      string status = CharArrayToString(resultData);
+      Print("Server status: ", status);
+      Comment("Server: CONNECTED");
    }
-
-   isConnected = true;
-   Print("Connected to Python server at ", InpServerHost, ":", InpServerPort);
 }
 
 //+------------------------------------------------------------------+
-//| Disconnect from server                                            |
+//| Send market data via WebRequest and get prediction                |
 //+------------------------------------------------------------------+
-void DisconnectFromServer()
+string SendWebRequest(const string &json)
 {
-   if(socketHandle != INVALID_HANDLE)
+   string headers = "Content-Type: application/json\r\n";
+   string resultHeaders;
+   char resultData[];
+   char postData[];
+
+   //--- Convert JSON string to char array
+   StringToCharArray(json, postData, 0, WHOLE_ARRAY, CP_UTF8);
+   int postLen = StringLen(json);
+
+   //--- Send POST request
+   int result = WebRequest("POST", InpServerURL + "/predict", headers, InpTimeout,
+                           postData, resultHeaders, resultData);
+
+   if(result == -1)
    {
-      SocketClose(socketHandle);
-      socketHandle = INVALID_HANDLE;
+      int error = GetLastError();
+      Print("ERROR: WebRequest failed, error=", error);
+      if(error == 4060)
+         Print("  → Add '", InpServerURL, "' to Tools → Options → Expert Advisors → Allow WebRequest for listed URL");
+      return "";
    }
-   isConnected = false;
+
+   //--- Convert response to string
+   string response = CharArrayToString(resultData);
+   return response;
 }
 
 //+------------------------------------------------------------------+
@@ -235,6 +241,7 @@ string CollectMarketData()
 
    //--- Build JSON manually (MQL5 has no native JSON)
    string json = "{";
+   json += "\"command\":\"predict\",";
    json += "\"symbol\":\"" + _Symbol + "\",";
    json += "\"period\":\"" + EnumToString(Period()) + "\",";
    json += "\"time\":" + IntegerToString((long)time[bars-1]) + ",";
@@ -314,108 +321,17 @@ string LongArrayToStr(const long &arr[], int count)
 }
 
 //+------------------------------------------------------------------+
-//| Send JSON to server and read response                             |
-//+------------------------------------------------------------------+
-string SendAndReceive(const string &json)
-{
-   //--- Send: length-prefixed protocol (4 bytes big-endian length + JSON payload)
-   uchar data[];
-   StringToCharArray(json, data, 0, WHOLE_ARRAY, CP_UTF8);
-   int len = ArraySize(data) - 1; // StringToCharArray adds null terminator
-
-   //--- Build length header (big-endian 4 bytes)
-   uchar header[4];
-   header[0] = (uchar)((len >> 24) & 0xFF);
-   header[1] = (uchar)((len >> 16) & 0xFF);
-   header[2] = (uchar)((len >> 8) & 0xFF);
-   header[3] = (uchar)(len & 0xFF);
-
-   //--- Combine header + payload
-   uchar sendBuf[];
-   ArrayResize(sendBuf, 4 + len);
-   ArrayCopy(sendBuf, header, 0, 0, 4);
-   ArrayCopy(sendBuf, data, 4, 0, len);
-
-   if(SocketSend(socketHandle, sendBuf, (uint)ArraySize(sendBuf)) != 4 + len)
-   {
-      Print("ERROR: SocketSend failed");
-      DisconnectFromServer();
-      return "";
-   }
-
-   //--- Read response length (4 bytes)
-   uchar lenBuf[];
-   int bytesRead = SocketReadExact(socketHandle, lenBuf, 4, InpTimeout);
-   if(bytesRead < 4)
-   {
-      Print("ERROR: Failed to read response length, bytesRead=", bytesRead);
-      DisconnectFromServer();
-      return "";
-   }
-
-   int respLen = ((int)lenBuf[0] << 24) | ((int)lenBuf[1] << 16) |
-                 ((int)lenBuf[2] << 8) | (int)lenBuf[3];
-   if(respLen <= 0 || respLen > 1048576) // Max 1MB
-   {
-      Print("ERROR: Invalid response length: ", respLen);
-      return "";
-   }
-
-   //--- Read response payload
-   uchar respBuf[];
-   bytesRead = SocketReadExact(socketHandle, respBuf, respLen, InpTimeout);
-   if(bytesRead < respLen)
-   {
-      Print("ERROR: Incomplete response, expected=", respLen, " got=", bytesRead);
-      return "";
-   }
-
-   string response = CharArrayToString(respBuf, 0, bytesRead, CP_UTF8);
-   return response;
-}
-
-//+------------------------------------------------------------------+
-//| Read exact byte count from socket with timeout                    |
-//+------------------------------------------------------------------+
-int SocketReadExact(int handle, uchar &result[], int exactBytes, int timeout)
-{
-   ArrayResize(result, 0);
-   int totalRead = 0;
-   uint startTime = GetTickCount();
-
-   while(totalRead < exactBytes)
-   {
-      if(GetTickCount() - startTime > (uint)timeout)
-         break;
-
-      uchar buf[];
-      //--- Use MQL5 built-in SocketRead(handle, buf[], timeout_ms)
-      int n = SocketRead(handle, buf, 4096, (uint)timeout);
-      if(n <= 0) { Sleep(1); continue; }
-
-      int oldSize = ArraySize(result);
-      ArrayResize(result, oldSize + n);
-      ArrayCopy(result, buf, oldSize, 0, n);
-      totalRead += n;
-   }
-   return totalRead;
-}
-
-//+------------------------------------------------------------------+
 //| Process server response and execute trades                        |
 //+------------------------------------------------------------------+
 void ProcessResponse(const string &json)
 {
    //--- Parse JSON response manually
    //--- Expected format: {"lstm_trend": float, "catboost_prob": float,
-   //---                    "price_direction": float, "signal": "BUY/SELL/HOLD",
-   //---                    "sl": float, "tp": float}
+   //---                    "price_direction": float, "signal": "BUY/SELL/HOLD"}
    double lstmTrend = JsonGetDouble(json, "lstm_trend");
    double catboostProb = JsonGetDouble(json, "catboost_prob");
    double priceDir = JsonGetDouble(json, "price_direction");
    string signal = JsonGetString(json, "signal");
-   double serverSL = JsonGetDouble(json, "sl");
-   double serverTP = JsonGetDouble(json, "tp");
 
    //--- Log prediction
    Print("Prediction: signal=", signal,
@@ -428,7 +344,8 @@ void ProcessResponse(const string &json)
            "LSTM Trend: ", DoubleToString(lstmTrend, 4), "\n",
            "CatBoost Prob: ", DoubleToString(catboostProb, 4), "\n",
            "Price Direction: ", DoubleToString(priceDir, 4), "\n",
-           "Positions: ", CountPositions(), "/", InpMaxPositions);
+           "Positions: ", CountPositions(), "/", InpMaxPositions, "\n",
+           "Server: ", InpServerURL);
 
    lastSignal = signal;
 
@@ -442,10 +359,9 @@ void ProcessResponse(const string &json)
 
       if(positions < InpMaxPositions)
       {
-         double sl = (serverSL > 0) ? serverSL : 0;
-         double tp = (serverTP > 0) ? serverTP : 0;
-         if(sl == 0 && InpStopLoss > 0) sl = SymbolInfoDouble(_Symbol, SYMBOL_ASK) - InpStopLoss * _Point;
-         if(tp == 0 && InpTakeProfit > 0) tp = SymbolInfoDouble(_Symbol, SYMBOL_ASK) + InpTakeProfit * _Point;
+         double sl = 0, tp = 0;
+         if(InpStopLoss > 0) sl = SymbolInfoDouble(_Symbol, SYMBOL_ASK) - InpStopLoss * _Point;
+         if(InpTakeProfit > 0) tp = SymbolInfoDouble(_Symbol, SYMBOL_ASK) + InpTakeProfit * _Point;
          ExecuteOrder(ORDER_TYPE_BUY, sl, tp);
       }
    }
@@ -456,10 +372,9 @@ void ProcessResponse(const string &json)
 
       if(positions < InpMaxPositions)
       {
-         double sl = (serverSL > 0) ? serverSL : 0;
-         double tp = (serverTP > 0) ? serverTP : 0;
-         if(sl == 0 && InpStopLoss > 0) sl = SymbolInfoDouble(_Symbol, SYMBOL_BID) + InpStopLoss * _Point;
-         if(tp == 0 && InpTakeProfit > 0) tp = SymbolInfoDouble(_Symbol, SYMBOL_BID) - InpTakeProfit * _Point;
+         double sl = 0, tp = 0;
+         if(InpStopLoss > 0) sl = SymbolInfoDouble(_Symbol, SYMBOL_BID) + InpStopLoss * _Point;
+         if(InpTakeProfit > 0) tp = SymbolInfoDouble(_Symbol, SYMBOL_BID) - InpTakeProfit * _Point;
          ExecuteOrder(ORDER_TYPE_SELL, sl, tp);
       }
    }
@@ -654,6 +569,13 @@ double JsonGetDouble(const string &json, const string &key)
    //--- Skip whitespace
    while(pos < StringLen(json) && StringGetCharacter(json, pos) == ' ') pos++;
 
+   //--- Handle null values
+   if(pos + 4 <= StringLen(json))
+   {
+      string sub = StringSubstr(json, pos, 4);
+      if(sub == "null") return 0.0;
+   }
+
    //--- Extract number
    string numStr = "";
    while(pos < StringLen(json))
@@ -683,7 +605,7 @@ string JsonGetString(const string &json, const string &key)
    while(pos < StringLen(json))
    {
       ushort ch = StringGetCharacter(json, pos);
-      if(ch == '"') break;
+      if(ch == '\"') break;
       result += CharToString((uchar)ch);
       pos++;
    }
@@ -695,6 +617,6 @@ string JsonGetString(const string &json, const string &key)
 //+------------------------------------------------------------------+
 void OnTick()
 {
-   //--- All logic handled in OnTimer for consistent 1s interval
+   //--- All logic handled in OnTimer for consistent interval
 }
 //+------------------------------------------------------------------+

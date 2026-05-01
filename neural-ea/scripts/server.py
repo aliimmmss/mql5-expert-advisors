@@ -1,22 +1,13 @@
 #!/usr/bin/env python3
 """
-Neural EA - TCP Prediction Server
-Loads trained ML models and serves real-time predictions over TCP (port 5555).
+Neural EA - Prediction Server (TCP + HTTP)
+Loads trained ML models and serves predictions via:
+  - TCP socket on port 5555 (legacy)
+  - HTTP on port 5556 (for MT5 WebRequest)
 
-Protocol:
-  - JSON request  → JSON response
-  - Request types: "predict" (default), "retrain", "status", "reload"
-
-Example predict request:
-  {"features": [...], "lstm_input": [...], "price_input": [...], "feature_names": [...]}
-
-Example response:
-  {"lstm_trend": 25.3, "catboost_prob": 0.78, "price_direction": 0.65,
-   "signal": "BUY", "confidence": 0.72}
-
-Example retrain request:
-  {"command": "retrain", "data": {"lstm_X": [...], "lstm_y": [...],
-   "catboost_X": [...], "catboost_y": [...], "price_X": [...], "price_y": [...]}}
+HTTP endpoint: POST http://127.0.0.1:5556/predict
+  Body: JSON with lstm_input, features, price_input
+  Response: JSON with signal, confidence, model outputs
 """
 
 import json
@@ -26,6 +17,7 @@ import socket
 import sys
 import threading
 import time
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Optional
 
@@ -35,7 +27,8 @@ import numpy as np
 # Config
 # ---------------------------------------------------------------------------
 HOST = "0.0.0.0"
-PORT = 5555
+TCP_PORT = 5555
+HTTP_PORT = 5556
 BASE_DIR = Path(__file__).resolve().parent.parent
 MODELS_DIR = BASE_DIR / "models"
 
@@ -346,33 +339,88 @@ class ModelManager:
 
 
 # ---------------------------------------------------------------------------
-# TCP Server
+# HTTP Server (for MT5 WebRequest)
 # ---------------------------------------------------------------------------
-class NeuralEAServer:
+# Global model manager shared between TCP and HTTP
+model_manager: Optional[ModelManager] = None
+
+
+class PredictionHTTPHandler(BaseHTTPRequestHandler):
+    """HTTP handler for MT5 WebRequest."""
+
+    def log_message(self, format, *args):
+        """Redirect HTTP logs to our logger."""
+        log.info(f"HTTP {args[0]}")
+
+    def do_POST(self):
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length == 0:
+            self._send_json(400, {"error": "Empty request body"})
+            return
+
+        try:
+            body = self.rfile.read(content_length)
+            request = json.loads(body.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            self._send_json(400, {"error": f"Invalid JSON: {e}"})
+            return
+
+        command = request.get("command", "predict")
+
+        try:
+            if command == "predict":
+                result = model_manager.predict(request)
+                self._send_json(200, result)
+            elif command == "status":
+                self._send_json(200, model_manager.status())
+            elif command == "retrain":
+                result = model_manager.retrain(request)
+                self._send_json(200, result)
+            elif command == "reload":
+                model_manager.load_all()
+                self._send_json(200, {"status": "reloaded"})
+            else:
+                self._send_json(400, {"error": f"Unknown command: {command}"})
+        except Exception as e:
+            log.exception(f"Error processing {command}")
+            self._send_json(500, {"error": str(e)})
+
+    def do_GET(self):
+        if self.path == "/status":
+            self._send_json(200, model_manager.status())
+        else:
+            self._send_json(200, {"status": "Neural EA Server", "endpoints": ["/predict", "/status"]})
+
+    def _send_json(self, code: int, data: dict):
+        response = json.dumps(data).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(response)))
+        self.end_headers()
+        self.wfile.write(response)
+
+
+# ---------------------------------------------------------------------------
+# TCP Server (legacy)
+# ---------------------------------------------------------------------------
+class NeuralEASServer:
     """Multi-threaded TCP server for Neural EA predictions."""
 
     def __init__(self, host: str, port: int):
         self.host = host
         self.port = port
-        self.model_manager = ModelManager(MODELS_DIR)
         self._running = False
         self._server_socket: Optional[socket.socket] = None
-        self._reload_thread: Optional[threading.Thread] = None
 
     def start(self):
         """Start the TCP server."""
         self._running = True
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._server_socket.settimeout(1.0)  # allow periodic shutdown check
+        self._server_socket.settimeout(1.0)
         self._server_socket.bind((self.host, self.port))
         self._server_socket.listen(16)
-        log.info(f"Neural EA Server listening on {self.host}:{self.port}")
-        log.info(f"Models dir: {MODELS_DIR}")
-
-        # Background thread to watch for model file changes
-        self._reload_thread = threading.Thread(target=self._reload_watcher, daemon=True)
-        self._reload_thread.start()
+        log.info(f"TCP server listening on {self.host}:{self.port}")
 
         try:
             while self._running:
@@ -384,24 +432,13 @@ class NeuralEAServer:
                 except socket.timeout:
                     continue
         except KeyboardInterrupt:
-            log.info("Shutting down ...")
+            pass
         finally:
             self._running = False
             if self._server_socket:
                 self._server_socket.close()
 
-    def _reload_watcher(self):
-        """Background thread: check for model file changes every 5s."""
-        while self._running:
-            time.sleep(5)
-            try:
-                self.model_manager.check_and_reload()
-            except Exception as e:
-                log.error(f"Reload check failed: {e}")
-
     def _handle_client(self, sock: socket.socket, addr):
-        """Handle a single client connection (may send multiple requests)."""
-        log.debug(f"Client connected: {addr}")
         buffer = b""
         try:
             sock.settimeout(60.0)
@@ -410,47 +447,31 @@ class NeuralEAServer:
                 if not chunk:
                     break
                 buffer += chunk
-
-                # Process all complete JSON messages (newline-delimited)
                 while b"\n" in buffer:
                     line, buffer = buffer.split(b"\n", 1)
                     line = line.strip()
                     if not line:
                         continue
-                    response = self._process_message(line)
-                    sock.sendall((json.dumps(response) + "\n").encode("utf-8"))
+                    request = json.loads(line)
+                    command = request.get("command", "predict")
+                    if command == "predict":
+                        result = model_manager.predict(request)
+                    elif command == "status":
+                        result = model_manager.status()
+                    elif command == "retrain":
+                        result = model_manager.retrain(request)
+                    elif command == "reload":
+                        model_manager.load_all()
+                        result = {"status": "reloaded"}
+                    else:
+                        result = {"error": f"Unknown command: {command}"}
+                    sock.sendall((json.dumps(result) + "\n").encode("utf-8"))
         except (socket.timeout, ConnectionResetError, BrokenPipeError):
             pass
         except Exception as e:
-            log.error(f"Client handler error ({addr}): {e}")
+            log.error(f"TCP client error ({addr}): {e}")
         finally:
             sock.close()
-            log.debug(f"Client disconnected: {addr}")
-
-    def _process_message(self, raw: bytes) -> dict:
-        """Parse a JSON message and dispatch to the right handler."""
-        try:
-            request = json.loads(raw)
-        except json.JSONDecodeError as e:
-            return {"error": f"Invalid JSON: {e}"}
-
-        command = request.get("command", "predict")
-
-        try:
-            if command == "predict":
-                return self.model_manager.predict(request)
-            elif command == "retrain":
-                return self.model_manager.retrain(request)
-            elif command == "status":
-                return self.model_manager.status()
-            elif command == "reload":
-                self.model_manager.load_all()
-                return {"status": "reloaded"}
-            else:
-                return {"error": f"Unknown command: {command}"}
-        except Exception as e:
-            log.exception(f"Error processing command '{command}'")
-            return {"error": str(e)}
 
 
 # ---------------------------------------------------------------------------
@@ -458,13 +479,39 @@ class NeuralEAServer:
 # ---------------------------------------------------------------------------
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="Neural EA TCP Prediction Server")
+    parser = argparse.ArgumentParser(description="Neural EA Prediction Server")
     parser.add_argument("--host", type=str, default=HOST, help=f"Bind address (default: {HOST})")
-    parser.add_argument("--port", type=int, default=PORT, help=f"Bind port (default: {PORT})")
+    parser.add_argument("--tcp-port", type=int, default=TCP_PORT, help=f"TCP port (default: {TCP_PORT})")
+    parser.add_argument("--http-port", type=int, default=HTTP_PORT, help=f"HTTP port (default: {HTTP_PORT})")
     args = parser.parse_args()
 
-    server = NeuralEAServer(args.host, args.port)
-    server.start()
+    global model_manager
+    model_manager = ModelManager(MODELS_DIR)
+
+    # Start hot-reload watcher
+    def reload_watcher():
+        while True:
+            time.sleep(5)
+            try:
+                model_manager.check_and_reload()
+            except Exception as e:
+                log.error(f"Reload check failed: {e}")
+
+    watcher = threading.Thread(target=reload_watcher, daemon=True)
+    watcher.start()
+
+    # Start HTTP server in background thread
+    http_server = HTTPServer((args.host, args.http_port), PredictionHTTPHandler)
+    http_thread = threading.Thread(target=http_server.serve_forever, daemon=True)
+    http_thread.start()
+    log.info(f"HTTP server listening on {args.host}:{args.http_port}")
+    log.info(f"  POST http://127.0.0.1:{args.http_port}/predict")
+    log.info(f"  GET  http://127.0.0.1:{args.http_port}/status")
+
+    # Start TCP server in main thread
+    log.info(f"Models dir: {MODELS_DIR}")
+    tcp_server = NeuralEASServer(args.host, args.tcp_port)
+    tcp_server.start()
 
 
 if __name__ == "__main__":
