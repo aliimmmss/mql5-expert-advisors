@@ -132,7 +132,9 @@ def train_lstm_trend(df: pd.DataFrame, timesteps: int = 5):
     func_model.set_weights(model.get_weights())
     
     onnx_path = str(MODELS_DIR / 'lstm_trend.onnx')
-    onnx_model, _ = tf2onnx.convert.from_keras(func_model, opset=15)
+    import tensorflow as tf
+    spec = [tf.TensorSpec((None, timesteps, len(feature_cols)), tf.float32, name="input")]
+    onnx_model, _ = tf2onnx.convert.from_keras(func_model, input_signature=spec, opset=15)
     onnx.save_model(onnx_model, onnx_path)
     print(f"\n✅ LSTM Trend model saved to {onnx_path}")
     
@@ -378,7 +380,9 @@ def train_price_predictor(df: pd.DataFrame, timesteps: int = 120):
     import onnx
     
     onnx_path = str(MODELS_DIR / 'price_predictor.onnx')
-    onnx_model, _ = tf2onnx.convert.from_keras(model, opset=15)
+    import tensorflow as tf
+    spec = [tf.TensorSpec((None, timesteps, len(feature_cols)), tf.float32, name="input")]
+    onnx_model, _ = tf2onnx.convert.from_keras(model, input_signature=spec, opset=15)
     onnx.save_model(onnx_model, onnx_path)
     print(f"\n✅ Price Predictor model saved to {onnx_path}")
     
