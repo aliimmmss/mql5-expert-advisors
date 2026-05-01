@@ -56,7 +56,8 @@ neural-ea/
 │   ├── NeuralEA_DataCollector.mq5  # Run in Tester to collect data
 │   └── NeuralEA_SmartMoney.mq5     # Main EA with ONNX integration
 ├── scripts/
-│   └── train_models.py             # Python training pipeline
+│   ├── train_models.py             # Python training pipeline
+│   └── live_trainer.py             # Live retraining from EA data
 ├── requirements.txt
 └── README.md
 ```
@@ -95,6 +96,22 @@ Key parameters to optimize:
 - `InpPrice_Confidence` (0.50-0.70): Direction confidence threshold
 - `InpSwingLookback` (10-50): SMC structure detection
 - `InpStopLoss` / `InpTakeProfit`: Risk management
+
+### Step 5: Live Training (Optional)
+
+Run the live trainer alongside the EA to continuously improve models with real market data:
+
+```bash
+python scripts/live_trainer.py --port 8099 --retrain-every 100
+```
+
+The EA sends market data snapshots via `WebRequest` to the trainer. After enough labeled samples accumulate, models are automatically retrained and saved. The feedback loop:
+
+1. EA on chart sends data via `POST /snapshot` each bar
+2. EA reports trade results via `POST /trade_outcome`
+3. EA sends next-bar close via `POST /label_direction` for automatic labeling
+4. After 100+ fully labeled samples → automatic retrain of all 3 models
+5. Updated ONNX models saved to `models/` → copy to MT5 `MQL5/Files/`
 
 ## How It Works
 
