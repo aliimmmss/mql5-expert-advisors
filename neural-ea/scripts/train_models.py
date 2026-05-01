@@ -123,7 +123,6 @@ def train_lstm_trend(df: pd.DataFrame, timesteps: int = 5):
     import tf2onnx
     import onnx
     import tensorflow as tf
-    import tempfile, shutil
     
     # Rebuild model and copy weights
     func_model = keras.Sequential([
@@ -135,13 +134,12 @@ def train_lstm_trend(df: pd.DataFrame, timesteps: int = 5):
     
     onnx_path = str(MODELS_DIR / 'lstm_trend.onnx')
     
-    @tf.function(input_signature=[tf.TensorSpec((None, timesteps, len(feature_cols)), tf.float32)])
+    @tf.function(input_signature=[tf.TensorSpec((None, timesteps, len(feature_cols)), tf.float32, name="input")])
     def predict(x):
         return func_model(x)
     
-    # Get concrete function and convert
-    concrete_func = predict.get_concrete_function()
-    onnx_model, _ = tf2onnx.convert.from_function(concrete_func, input_signature=concrete_func.inputs, opset=15)
+    # Pass tf.function object (not concrete func) — from_function calls get_concrete_function internally
+    onnx_model, _ = tf2onnx.convert.from_function(predict, opset=15)
     onnx.save_model(onnx_model, onnx_path)
     print(f"\n✅ LSTM Trend model saved to {onnx_path}")
     
@@ -389,12 +387,12 @@ def train_price_predictor(df: pd.DataFrame, timesteps: int = 120):
     
     onnx_path = str(MODELS_DIR / 'price_predictor.onnx')
     
-    @tf.function(input_signature=[tf.TensorSpec((None, timesteps, len(feature_cols)), tf.float32)])
+    @tf.function(input_signature=[tf.TensorSpec((None, timesteps, len(feature_cols)), tf.float32, name="input")])
     def predict_price(x):
         return model(x)
     
-    concrete_func = predict_price.get_concrete_function()
-    onnx_model, _ = tf2onnx.convert.from_function(concrete_func, input_signature=concrete_func.inputs, opset=15)
+    # Pass tf.function object (not concrete func) — from_function calls get_concrete_function internally
+    onnx_model, _ = tf2onnx.convert.from_function(predict_price, opset=15)
     onnx.save_model(onnx_model, onnx_path)
     print(f"\n✅ Price Predictor model saved to {onnx_path}")
     
