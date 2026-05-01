@@ -136,7 +136,7 @@ def train_lstm_trend(df: pd.DataFrame, timesteps: int = 5):
     onnx_path = str(MODELS_DIR / 'lstm_trend.onnx')
     tmp_dir = tempfile.mkdtemp()
     try:
-        func_model.save(tmp_dir)
+        func_model.export(tmp_dir)
         onnx_model, _ = tf2onnx.convert.from_saved_model(tmp_dir, opset=15)
         onnx.save_model(onnx_model, onnx_path)
     finally:
@@ -389,7 +389,7 @@ def train_price_predictor(df: pd.DataFrame, timesteps: int = 120):
     onnx_path = str(MODELS_DIR / 'price_predictor.onnx')
     tmp_dir = tempfile.mkdtemp()
     try:
-        model.save(tmp_dir)
+        model.export(tmp_dir)
         onnx_model, _ = tf2onnx.convert.from_saved_model(tmp_dir, opset=15)
         onnx.save_model(onnx_model, onnx_path)
     finally:
