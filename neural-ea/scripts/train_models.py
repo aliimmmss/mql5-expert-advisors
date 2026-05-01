@@ -261,8 +261,10 @@ def load_csv_data(path: str, seq_len_lstm: int = 20, seq_len_price: int = 60,
     df = pd.read_csv(path)
     log.info(f"Loaded {len(df)} rows from {path}")
 
-    # Derive features (adjust column names to your dataset)
-    feature_cols = [c for c in df.columns if c not in ("time", "target_adx", "target_win", "target_direction")]
+    # Derive features — drop targets and any non-numeric columns (datetime, etc.)
+    target_cols = {"target_adx", "target_win", "target_direction"}
+    feature_cols = [c for c in df.select_dtypes(include=[np.number]).columns if c not in target_cols]
+    log.info(f"Using {len(feature_cols)} numeric feature columns")
     X = df[feature_cols].values.astype(np.float32)
 
     # Targets
