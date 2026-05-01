@@ -191,7 +191,7 @@ void CollectData()
       
       // Get indicator values
       double adx[], adxP[], adxM[];
-      double rsi[], macdM[], macdS[], macdH[];
+      double rsi[], macdM[], macdS[];
       double psar[], atr[];
       double sma50[], sma200[];
       double bbU[], bbM[], bbL[];
@@ -219,8 +219,8 @@ void CollectData()
       if(!CopyIndicator(handleOBV, 0, i, 1, obv)) continue;
       if(!CopyIndicator(handleAD, 0, i, 1, ad)) continue;
       
-      // MACD histogram
-      macdH[0] = macdM[0] - macdS[0];
+      // MACD histogram (scalar, not array)
+      double macdHist = macdM[0] - macdS[0];
       
       // Heiken Ashi
       double haO, haC, haH, haL;
@@ -278,7 +278,7 @@ void CollectData()
          candle_return, candle_body, upper_wick, lower_wick,
          adx[0], adxP[0], adxM[0],
          rsi[0],
-         macdM[0], macdS[0], macdH[0],
+         macdM[0], macdS[0], macdHist,
          psar[0],
          atr[0],
          sma50[0], sma200[0],
