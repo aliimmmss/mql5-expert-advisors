@@ -119,9 +119,11 @@ def train_lstm_trend(df: pd.DataFrame, timesteps: int = 5):
     trending_pct = (predictions > 30).mean() * 100
     print(f"Predicted trending (ADX > 30): {trending_pct:.1f}% of bars")
     
-    # Convert to ONNX
+    # Convert to ONNX via SavedModel (tf2onnx from_keras broken with Keras 3.x)
     import tf2onnx
     import onnx
+    import tensorflow as tf
+    import tempfile, shutil
     
     # Convert Sequential to Functional for ONNX export
     func_model = keras.Sequential([
@@ -132,10 +134,13 @@ def train_lstm_trend(df: pd.DataFrame, timesteps: int = 5):
     func_model.set_weights(model.get_weights())
     
     onnx_path = str(MODELS_DIR / 'lstm_trend.onnx')
-    import tensorflow as tf
-    spec = [tf.TensorSpec((None, timesteps, len(feature_cols)), tf.float32, name="input")]
-    onnx_model, _ = tf2onnx.convert.from_keras(func_model, input_signature=spec, opset=15)
-    onnx.save_model(onnx_model, onnx_path)
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        func_model.save(tmp_dir)
+        onnx_model, _ = tf2onnx.convert.from_saved_model(tmp_dir, opset=15)
+        onnx.save_model(onnx_model, onnx_path)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
     print(f"\n✅ LSTM Trend model saved to {onnx_path}")
     
     # Save scaler params for MQL5
@@ -375,15 +380,20 @@ def train_price_predictor(df: pd.DataFrame, timesteps: int = 120):
             print(f"  Confidence > {threshold}: {mask.sum()} samples, "
                   f"accuracy {correct*100:.1f}%")
     
-    # Export to ONNX
+    # Export to ONNX via SavedModel (tf2onnx from_keras broken with Keras 3.x)
     import tf2onnx
     import onnx
+    import tensorflow as tf
+    import tempfile, shutil
     
     onnx_path = str(MODELS_DIR / 'price_predictor.onnx')
-    import tensorflow as tf
-    spec = [tf.TensorSpec((None, timesteps, len(feature_cols)), tf.float32, name="input")]
-    onnx_model, _ = tf2onnx.convert.from_keras(model, input_signature=spec, opset=15)
-    onnx.save_model(onnx_model, onnx_path)
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        model.save(tmp_dir)
+        onnx_model, _ = tf2onnx.convert.from_saved_model(tmp_dir, opset=15)
+        onnx.save_model(onnx_model, onnx_path)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
     print(f"\n✅ Price Predictor model saved to {onnx_path}")
     
     return model, scaler, history
