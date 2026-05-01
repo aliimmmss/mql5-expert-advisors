@@ -267,10 +267,15 @@ def load_csv_data(path: str, seq_len_lstm: int = 20, seq_len_price: int = 60,
     log.info(f"Using {len(feature_cols)} numeric feature columns")
     X = df[feature_cols].values.astype(np.float32)
 
-    # Targets
-    y_adx = df["target_adx"].values.astype(np.float32) if "target_adx" in df.columns else np.zeros(len(df))
-    y_win = df["target_win"].values.astype(int) if "target_win" in df.columns else np.zeros(len(df), dtype=int)
-    y_dir = df["target_direction"].values.astype(int) if "target_direction" in df.columns else np.zeros(len(df), dtype=int)
+    # Targets — map from actual CSV column names
+    adx_col = next((c for c in df.columns if "adx" in c.lower() and "label" in c.lower()), "target_adx")
+    win_col = next((c for c in df.columns if "win" in c.lower() and "label" in c.lower()), "target_win")
+    dir_col = next((c for c in df.columns if "direction" in c.lower() and "label" in c.lower()), "target_direction")
+    log.info(f"Target columns: adx={adx_col}, win={win_col}, direction={dir_col}")
+
+    y_adx = df[adx_col].values.astype(np.float32) if adx_col in df.columns else np.zeros(len(df))
+    y_win = df[win_col].values.astype(int) if win_col in df.columns else np.zeros(len(df), dtype=int)
+    y_dir = df[dir_col].values.astype(int) if dir_col in df.columns else np.zeros(len(df), dtype=int)
 
     # Build sequences
     n_samples = len(df) - seq_len_price
