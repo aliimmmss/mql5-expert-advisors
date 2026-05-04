@@ -330,13 +330,13 @@ void DashBuild()
    ObjectSetInteger(0, DASH_TITLE, OBJPROP_SELECTABLE, false);
    
    // --- Minimize button [ — ] / [ + ] ---
-   string minText = dashMinimized ? "+" : "\u2014";   // plus or em-dash
+   string minText = dashMinimized ? "+" : "_";   // plus or underscore
    DashCreateButton(DASH_MINBTN, dashX + dashWidth - 52, dashY + 2,
                     22, 18, minText, C'50,50,70', clrWhite);
    
    // --- Close button [ X ] ---
    DashCreateButton(DASH_CLSBTN, dashX + dashWidth - 26, dashY + 2,
-                    22, 18, "\u2715", C'80,30,30', clrWhite);
+                    22, 18, "X", C'80,30,30', clrWhite);
    
    // --- Row labels (only when expanded) ---
    if(!dashMinimized) {
