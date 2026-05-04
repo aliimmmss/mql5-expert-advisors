@@ -219,6 +219,220 @@ datetime       lastStateSave;
 int            g_ma200Handle = INVALID_HANDLE;
 
 //+------------------------------------------------------------------+
+//| DASHBOARD STATE                                                   |
+//+------------------------------------------------------------------+
+#define DASH_PREFIX "SMCDash_"
+#define DASH_BG     DASH_PREFIX "BG"
+#define DASH_TITLE  DASH_PREFIX "Title"
+#define DASH_MINBTN DASH_PREFIX "MinBtn"
+#define DASH_CLSBTN DASH_PREFIX "ClsBtn"
+#define DASH_ROWS   20        // max text rows
+int      dashX         = 20;   // top-left corner X (pixels from left)
+int      dashY         = 30;   // top-left corner Y (pixels from top)
+int      dashWidth     = 260;  // panel width
+int      dashRowH      = 16;   // row height
+int      dashPadX      = 10;   // horizontal padding
+int      dashPadY      = 8;    // vertical padding
+bool     dashMinimized = false; // minimize toggle
+bool     dashVisible   = true;  // close toggle
+bool     dashDragging  = false;
+int      dashDragOfsX  = 0;
+int      dashDragOfsY  = 0;
+string   dashRowNames[];       // array of row label names
+string   dashFullText[];       // full text when expanded
+string   dashMiniText;         // one-line text when minimized
+
+//+------------------------------------------------------------------+
+//| DASHBOARD CREATION & MANAGEMENT                                  |
+//+------------------------------------------------------------------+
+void DashCreateLabel(string name, int x, int y, string text,
+                     int fontSize=9, color clr=clrWhite,
+                     string font="Consolas", bool selectable=false)
+{
+   ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   ObjectSetString (0, name, OBJPROP_TEXT, text);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, fontSize);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   ObjectSetString (0, name, OBJPROP_FONT, font);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, selectable);
+   ObjectSetInteger(0, name, OBJPROP_SELECTED, false);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+}
+
+void DashCreateBG(int x, int y, int w, int h)
+{
+   ObjectCreate(0, DASH_BG, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, DASH_BG, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, DASH_BG, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, DASH_BG, OBJPROP_XSIZE, w);
+   ObjectSetInteger(0, DASH_BG, OBJPROP_YSIZE, h);
+   ObjectSetInteger(0, DASH_BG, OBJPROP_BGCOLOR, C'20,20,30');
+   ObjectSetInteger(0, DASH_BG, OBJPROP_BORDER_COLOR, C'80,80,120');
+   ObjectSetInteger(0, DASH_BG, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSetInteger(0, DASH_BG, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, DASH_BG, OBJPROP_SELECTABLE, true);  // draggable
+   ObjectSetInteger(0, DASH_BG, OBJPROP_SELECTED, false);
+   ObjectSetInteger(0, DASH_BG, OBJPROP_BACK, false);
+}
+
+void DashCreateButton(string name, int x, int y, int w, int h,
+                      string text, color bgClr, color txtClr)
+{
+   ObjectCreate(0, name, OBJ_BUTTON, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, name, OBJPROP_XSIZE, w);
+   ObjectSetInteger(0, name, OBJPROP_YSIZE, h);
+   ObjectSetString (0, name, OBJPROP_TEXT, text);
+   ObjectSetInteger(0, name, OBJPROP_BGCOLOR, bgClr);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, txtClr);
+   ObjectSetInteger(0, name, OBJPROP_BORDER_COLOR, C'60,60,90');
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 9);
+   ObjectSetString (0, name, OBJPROP_FONT, "Consolas");
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+}
+
+void DashDestroy()
+{
+   ObjectsDeleteAll(0, DASH_PREFIX);
+   ArrayResize(dashRowNames, 0);
+   // Note: dashFullText is NOT cleared here — DashBuild needs it.
+   // DisplayStatus() resets it before each update.
+}
+
+//+------------------------------------------------------------------+
+//| Build / refresh the dashboard panel                              |
+//+------------------------------------------------------------------+
+void DashBuild()
+{
+   if(!dashVisible) { DashDestroy(); Comment(""); return; }
+   
+   // Calculate panel height
+   int rows = ArraySize(dashFullText);
+   if(rows < 1) rows = 1;
+   int titleH = 22;  // title bar height
+   int bgH;
+   if(dashMinimized)
+      bgH = titleH;
+   else
+      bgH = titleH + dashPadY * 2 + rows * dashRowH;
+   
+   // --- Background ---
+   DashDestroy();
+   DashCreateBG(dashX, dashY, dashWidth, bgH);
+   
+   // --- Title bar (draggable area) ---
+   DashCreateLabel(DASH_TITLE, dashX + dashPadX, dashY + 4,
+                   "SMC Dashboard", 10, clrGold, "Consolas");
+   ObjectSetInteger(0, DASH_TITLE, OBJPROP_SELECTABLE, false);
+   
+   // --- Minimize button [ — ] / [ + ] ---
+   string minText = dashMinimized ? "+" : "\u2014";   // plus or em-dash
+   DashCreateButton(DASH_MINBTN, dashX + dashWidth - 52, dashY + 2,
+                    22, 18, minText, C'50,50,70', clrWhite);
+   
+   // --- Close button [ X ] ---
+   DashCreateButton(DASH_CLSBTN, dashX + dashWidth - 26, dashY + 2,
+                    22, 18, "\u2715", C'80,30,30', clrWhite);
+   
+   // --- Row labels (only when expanded) ---
+   if(!dashMinimized) {
+      ArrayResize(dashRowNames, rows);
+      for(int i = 0; i < rows; i++) {
+         string rName = DASH_PREFIX + "R" + IntegerToString(i);
+         dashRowNames[i] = rName;
+         int ry = dashY + titleH + dashPadY + i * dashRowH;
+         color rClr = clrWhite;
+         // Highlight key lines
+         if(StringFind(dashFullText[i], "BULLISH") >= 0)  rClr = clrLime;
+         else if(StringFind(dashFullText[i], "BEARISH") >= 0) rClr = clrRed;
+         else if(StringFind(dashFullText[i], "STRONG") >= 0)  rClr = clrOrange;
+         else if(StringFind(dashFullText[i], "===") >= 0)      rClr = clrGold;
+         else if(StringFind(dashFullText[i], "---") >= 0)      rClr = C'100,100,140';
+         DashCreateLabel(rName, dashX + dashPadX, ry,
+                         dashFullText[i], 8, rClr, "Consolas");
+      }
+   }
+   
+   ChartRedraw(0);
+}
+
+//+------------------------------------------------------------------+
+//| ChartEvent handler – drag, minimize, close                       |
+//+------------------------------------------------------------------+
+void OnChartEvent(const int id, const long &lparam,
+                  const double &dparam, const string &sparam)
+{
+   // --- Minimize button click ---
+   if(id == CHARTEVENT_OBJECT_CLICK && sparam == DASH_MINBTN) {
+      dashMinimized = !dashMinimized;
+      ObjectSetInteger(0, DASH_MINBTN, OBJPROP_STATE, false);
+      DashBuild();
+      return;
+   }
+   
+   // --- Close button click ---
+   if(id == CHARTEVENT_OBJECT_CLICK && sparam == DASH_CLSBTN) {
+      dashVisible = false;
+      ObjectSetInteger(0, DASH_CLSBTN, OBJPROP_STATE, false);
+      DashDestroy();
+      Comment("SMC Dashboard closed. Press D to reopen.");
+      ChartRedraw(0);
+      return;
+   }
+   
+   // --- Reopen with 'D' key ---
+   if(id == CHARTEVENT_KEYDOWN && lparam == 'D') {
+      if(!dashVisible) {
+         dashVisible = true;
+         Comment("");
+         DashBuild();
+      }
+      return;
+   }
+   
+   // --- Drag the background panel ---
+   if(id == CHARTEVENT_OBJECT_DRAG) {
+      if(sparam == DASH_BG) {
+         int newX = (int)ObjectGetInteger(0, DASH_BG, OBJPROP_XDISTANCE);
+         int newY = (int)ObjectGetInteger(0, DASH_BG, OBJPROP_YDISTANCE);
+         if(newX != dashX || newY != dashY) {
+            dashX = newX;
+            dashY = newY;
+            DashBuild();
+         }
+      }
+   }
+   
+   // --- Deselect BG after drag completes ---
+   if(id == CHARTEVENT_OBJECT_CLICK && sparam == DASH_BG) {
+      ObjectSetInteger(0, DASH_BG, OBJPROP_SELECTED, false);
+      ChartRedraw(0);
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Helper: add a row to dashFullText                                |
+//+------------------------------------------------------------------+
+void DashAddRow(string text)
+{
+   int n = ArraySize(dashFullText);
+   ArrayResize(dashFullText, n + 1);
+   dashFullText[n] = text;
+}
+
+//+------------------------------------------------------------------+
+//| Helper: separator line                                           |
+//+------------------------------------------------------------------+
+void DashSep()
+{
+   DashAddRow("----------------------------------------");
+}
+
+//+------------------------------------------------------------------+
 //| Expert initialization function                                    |
 //+------------------------------------------------------------------+
 int OnInit() {
@@ -259,6 +473,10 @@ int OnInit() {
    lastMidnightReset = 0;
    lastSentimentUpdate = 0;
    lastStateSave = 0;
+   lastStrategy = "";
+   
+   // Initialize dashboard
+   DashBuild();
    
    // Restore state from previous run (weekend/restart persistence)
    LoadState();
@@ -296,7 +514,11 @@ void OnDeinit(const int reason) {
    ObjectsDeleteAll(0, "SESSION_");
    ObjectsDeleteAll(0, "STRUCTURE_");
    
-   Comment("");
+   // Clean up dashboard
+   DashDestroy();
+   ArrayResize(dashFullText, 0);
+   ArrayResize(dashRowNames, 0);
+   
    Print("SmartMoney Concepts EA Removed");
 }
 
@@ -1770,44 +1992,46 @@ void DrawSessionRanges() {
 }
 
 //+------------------------------------------------------------------+
-//| DISPLAY STATUS                                                    |
+//| Display status via interactive dashboard                          |
 //+------------------------------------------------------------------+
 void DisplayStatus() {
-   string status = "";
-   status += "=== SMART MONEY CONCEPTS EA ===\n";
-   status += "═══════════════════════════════\n";
-   status += "Market Trend: " + currentTrend + "\n";
-   status += "Sentiment: " + currentSentimentText + "\n";
-   status += "Active Trades: " + IntegerToString(activeTrades) + "/" + IntegerToString(InpMaxTrades) + "\n";
-   status += "═══════════════════════════════\n";
-   status += "STRUCTURE:\n";
-   status += "  Swing Highs: " + IntegerToString(ArraySize(swingHighs)) + "\n";
-   status += "  Swing Lows: " + IntegerToString(ArraySize(swingLows)) + "\n";
-   status += "═══════════════════════════════\n";
-   status += "ZONES:\n";
-   status += "  Bullish FVGs: " + IntegerToString(ArraySize(bullishFVGs)) + "\n";
-   status += "  Bearish FVGs: " + IntegerToString(ArraySize(bearishFVGs)) + "\n";
-   status += "  Bullish OBs: " + IntegerToString(ArraySize(bullishOBs)) + "\n";
-   status += "  Bearish OBs: " + IntegerToString(ArraySize(bearishOBs)) + "\n";
-   status += "═══════════════════════════════\n";
-   status += "LIQUIDITY:\n";
-   status += "  BSL Levels: " + IntegerToString(ArraySize(buySideLiq)) + "\n";
-   status += "  SSL Levels: " + IntegerToString(ArraySize(sellSideLiq)) + "\n";
-   status += "═══════════════════════════════\n";
-   status += "SESSIONS:\n";
-   if(IsRangeValid(currentSession))
-      status += "  Opening Range: " + DoubleToString(currentSession.low, _Digits) +
-                " - " + DoubleToString(currentSession.high, _Digits) + "\n";
-   else
-      status += "  Opening Range: N/A (waiting for session)\n";
-   if(IsRangeValid(midnightSession))
-      status += "  Midnight Range: " + DoubleToString(midnightSession.low, _Digits) +
-                " - " + DoubleToString(midnightSession.high, _Digits) + "\n";
-   else
-      status += "  Midnight Range: N/A (waiting for session)\n";
-   status += "═══════════════════════════════\n";
-   status += "Last Strategy: " + lastStrategy + "\n";
+   // Build row data
+   ArrayResize(dashFullText, 0);
    
-   Comment(status);
+   DashAddRow("Trend: " + currentTrend +
+              "  |  Sentiment: " + currentSentimentText);
+   DashSep();
+   DashAddRow("Active Trades: " + IntegerToString(activeTrades) +
+              " / " + IntegerToString(InpMaxTrades));
+   DashAddRow("Last Strategy: " + (lastStrategy == "" ? "None" : lastStrategy));
+   DashSep();
+   DashAddRow("STRUCTURE");
+   DashAddRow("  Swing Highs: " + IntegerToString(ArraySize(swingHighs)) +
+              "  |  Swing Lows: " + IntegerToString(ArraySize(swingLows)));
+   DashSep();
+   DashAddRow("ZONES");
+   DashAddRow("  Bull FVG: " + IntegerToString(ArraySize(bullishFVGs)) +
+              "  |  Bear FVG: " + IntegerToString(ArraySize(bearishFVGs)));
+   DashAddRow("  Bull OB:  " + IntegerToString(ArraySize(bullishOBs)) +
+              "  |  Bear OB:  " + IntegerToString(ArraySize(bearishOBs)));
+   DashSep();
+   DashAddRow("LIQUIDITY");
+   DashAddRow("  BSL: " + IntegerToString(ArraySize(buySideLiq)) +
+              "  |  SSL: " + IntegerToString(ArraySize(sellSideLiq)));
+   DashSep();
+   DashAddRow("SESSIONS");
+   if(IsRangeValid(currentSession))
+      DashAddRow("  Opening:  " + DoubleToString(currentSession.low, _Digits) +
+                 " - " + DoubleToString(currentSession.high, _Digits));
+   else
+      DashAddRow("  Opening:  N/A");
+   if(IsRangeValid(midnightSession))
+      DashAddRow("  Midnight: " + DoubleToString(midnightSession.low, _Digits) +
+                 " - " + DoubleToString(midnightSession.high, _Digits));
+   else
+      DashAddRow("  Midnight: N/A");
+   
+   // Rebuild the panel
+   DashBuild();
 }
 //+------------------------------------------------------------------+
