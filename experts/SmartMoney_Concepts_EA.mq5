@@ -213,6 +213,7 @@ string         lastStrategy;
 // Bar Tracking
 datetime       lastBarTime;
 int            currentBarIndex;
+datetime       lastStateSave;
 
 // Indicator handles
 int            g_ma200Handle = INVALID_HANDLE;
@@ -257,6 +258,10 @@ int OnInit() {
    lastSessionReset = 0;
    lastMidnightReset = 0;
    lastSentimentUpdate = 0;
+   lastStateSave = 0;
+   
+   // Restore state from previous run (weekend/restart persistence)
+   LoadState();
    
    // Create indicator handles
    g_ma200Handle = iMA(_Symbol, InpHigherTF, 200, 0, MODE_EMA, PRICE_CLOSE);
@@ -276,6 +281,9 @@ int OnInit() {
 //| Expert deinitialization function                                  |
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason) {
+   // Save state before shutdown (weekend persistence)
+   SaveState();
+   
    // Release indicator handles
    if(g_ma200Handle != INVALID_HANDLE)
       IndicatorRelease(g_ma200Handle);
@@ -316,6 +324,9 @@ void OnTick() {
    // === LAYER 3: SESSION RANGES ===
    if(InpUseOpeningRange) UpdateOpeningRange();
    if(InpUseMidnightRange) UpdateMidnightRange();
+   
+   // Save state periodically (every 5 minutes)
+   if(TimeCurrent() - lastStateSave >= 300) SaveState();
    
    // === LAYER 4: SENTIMENT ENGINE ===
    if(InpUseSentiment) CalculateSentiment();
@@ -941,21 +952,214 @@ void CheckLiquiditySweeps() {
 }
 
 //+------------------------------------------------------------------+
+//| SAVE STATE (GlobalVariables for weekend persistence)              |
+//+------------------------------------------------------------------+
+void SaveState() {
+   string prefix = "SMC_" + _Symbol + "_" + IntegerToString(InpMagicNumber) + "_";
+   
+   GlobalVariableSet(prefix + "OH", currentSession.high);
+   GlobalVariableSet(prefix + "OL", currentSession.low);
+   GlobalVariableSet(prefix + "OB", currentSession.broken ? 1.0 : 0.0);
+   GlobalVariableSet(prefix + "OST", (double)currentSession.startTime);
+   GlobalVariableSet(prefix + "OET", (double)currentSession.endTime);
+   
+   GlobalVariableSet(prefix + "MH", midnightSession.high);
+   GlobalVariableSet(prefix + "ML", midnightSession.low);
+   GlobalVariableSet(prefix + "MB", midnightSession.broken ? 1.0 : 0.0);
+   GlobalVariableSet(prefix + "MST", (double)midnightSession.startTime);
+   GlobalVariableSet(prefix + "MET", (double)midnightSession.endTime);
+   
+   GlobalVariableSet(prefix + "LSR", (double)lastSessionReset);
+   GlobalVariableSet(prefix + "LMR", (double)lastMidnightReset);
+   
+   double trendVal = 0;
+   if(currentTrend == "BULLISH") trendVal = 1;
+   else if(currentTrend == "BEARISH") trendVal = -1;
+   GlobalVariableSet(prefix + "Trend", trendVal);
+   
+   GlobalVariableSet(prefix + "SaveTime", (double)TimeCurrent());
+   lastStateSave = TimeCurrent();
+}
+
+//+------------------------------------------------------------------+
+//| LOAD STATE (restore from previous run)                            |
+//+------------------------------------------------------------------+
+void LoadState() {
+   string prefix = "SMC_" + _Symbol + "_" + IntegerToString(InpMagicNumber) + "_";
+   
+   if(!GlobalVariableCheck(prefix + "SaveTime")) {
+      Print("SMC: No saved state found - starting fresh");
+      return;
+   }
+   
+   double saveTime = GlobalVariableGet(prefix + "SaveTime");
+   datetime savedDt = (datetime)saveTime;
+   
+   // Only restore if saved within last 3 days (handles weekends)
+   if(TimeCurrent() - savedDt > 3 * 86400) {
+      Print("SMC: Saved state too old (", TimeToString(savedDt), ") - starting fresh");
+      return;
+   }
+   
+   currentSession.high = GlobalVariableGet(prefix + "OH");
+   currentSession.low = GlobalVariableGet(prefix + "OL");
+   currentSession.broken = (GlobalVariableGet(prefix + "OB") > 0.5);
+   currentSession.startTime = (datetime)GlobalVariableGet(prefix + "OST");
+   currentSession.endTime = (datetime)GlobalVariableGet(prefix + "OET");
+   currentSession.isMidnight = false;
+   
+   midnightSession.high = GlobalVariableGet(prefix + "MH");
+   midnightSession.low = GlobalVariableGet(prefix + "ML");
+   midnightSession.broken = (GlobalVariableGet(prefix + "MB") > 0.5);
+   midnightSession.startTime = (datetime)GlobalVariableGet(prefix + "MST");
+   midnightSession.endTime = (datetime)GlobalVariableGet(prefix + "MET");
+   midnightSession.isMidnight = true;
+   
+   lastSessionReset = (datetime)GlobalVariableGet(prefix + "LSR");
+   lastMidnightReset = (datetime)GlobalVariableGet(prefix + "LMR");
+   
+   double trendVal = GlobalVariableGet(prefix + "Trend");
+   if(trendVal > 0.5) currentTrend = "BULLISH";
+   else if(trendVal < -0.5) currentTrend = "BEARISH";
+   else currentTrend = "NEUTRAL";
+   
+   Print("SMC: State restored from ", TimeToString(savedDt));
+   if(currentSession.high > 0 && currentSession.low < 999999)
+      Print("SMC: Opening Range=", DoubleToString(currentSession.low, _Digits),
+            " - ", DoubleToString(currentSession.high, _Digits));
+   if(midnightSession.high > 0 && midnightSession.low < 999999)
+      Print("SMC: Midnight Range=", DoubleToString(midnightSession.low, _Digits),
+            " - ", DoubleToString(midnightSession.high, _Digits));
+   
+   // If it's a new day, backfill from history
+   datetime todayDate = iTime(_Symbol, PERIOD_D1, 0);
+   MqlDateTime dt;
+   TimeToStruct(TimeCurrent(), dt);
+   
+   if(lastSessionReset != todayDate && dt.hour >= InpOpeningRangeEnd) {
+      BackfillOpeningRange();
+   }
+   if(lastMidnightReset != todayDate && dt.hour >= InpMidnightEnd) {
+      BackfillMidnightRange();
+   }
+}
+
+//+------------------------------------------------------------------+
+//| BACKFILL OPENING RANGE FROM HISTORICAL BARS                      |
+//+------------------------------------------------------------------+
+void BackfillOpeningRange() {
+   datetime todayDate = iTime(_Symbol, PERIOD_D1, 0);
+   datetime rangeStart = todayDate + InpOpeningRangeStart * 3600;
+   datetime rangeEnd = todayDate + InpOpeningRangeEnd * 3600;
+   
+   int startBar = iBarShift(_Symbol, PERIOD_CURRENT, rangeStart, false);
+   int endBar = iBarShift(_Symbol, PERIOD_CURRENT, rangeEnd, false);
+   
+   if(startBar < 0 || endBar < 0) {
+      Print("SMC: Cannot backfill opening range - bars not found");
+      return;
+   }
+   
+   int fromBar = MathMax(startBar, endBar);
+   int toBar = MathMin(startBar, endBar);
+   
+   double maxHigh = 0;
+   double minLow = 999999;
+   
+   for(int i = toBar; i <= fromBar; i++) {
+      double h = iHigh(_Symbol, PERIOD_CURRENT, i);
+      double l = iLow(_Symbol, PERIOD_CURRENT, i);
+      if(h > maxHigh) maxHigh = h;
+      if(l < minLow) minLow = l;
+   }
+   
+   if(maxHigh > 0 && minLow < 999999) {
+      currentSession.high = maxHigh;
+      currentSession.low = minLow;
+      currentSession.startTime = rangeStart;
+      currentSession.endTime = rangeEnd;
+      currentSession.broken = false;
+      currentSession.isMidnight = false;
+      lastSessionReset = todayDate;
+      Print("SMC: Backfilled Opening Range=", DoubleToString(minLow, _Digits),
+            " - ", DoubleToString(maxHigh, _Digits));
+      SaveState();
+   }
+}
+
+//+------------------------------------------------------------------+
+//| BACKFILL MIDNIGHT RANGE FROM HISTORICAL BARS                     |
+//+------------------------------------------------------------------+
+void BackfillMidnightRange() {
+   datetime todayDate = iTime(_Symbol, PERIOD_D1, 0);
+   datetime rangeStart = todayDate + InpMidnightStart * 3600;
+   datetime rangeEnd = todayDate + InpMidnightEnd * 3600;
+   
+   int startBar = iBarShift(_Symbol, PERIOD_CURRENT, rangeStart, false);
+   int endBar = iBarShift(_Symbol, PERIOD_CURRENT, rangeEnd, false);
+   
+   if(startBar < 0 || endBar < 0) {
+      Print("SMC: Cannot backfill midnight range - bars not found");
+      return;
+   }
+   
+   int fromBar = MathMax(startBar, endBar);
+   int toBar = MathMin(startBar, endBar);
+   
+   double maxHigh = 0;
+   double minLow = 999999;
+   
+   for(int i = toBar; i <= fromBar; i++) {
+      double h = iHigh(_Symbol, PERIOD_CURRENT, i);
+      double l = iLow(_Symbol, PERIOD_CURRENT, i);
+      if(h > maxHigh) maxHigh = h;
+      if(l < minLow) minLow = l;
+   }
+   
+   if(maxHigh > 0 && minLow < 999999) {
+      midnightSession.high = maxHigh;
+      midnightSession.low = minLow;
+      midnightSession.startTime = rangeStart;
+      midnightSession.endTime = rangeEnd;
+      midnightSession.broken = false;
+      midnightSession.isMidnight = true;
+      lastMidnightReset = todayDate;
+      Print("SMC: Backfilled Midnight Range=", DoubleToString(minLow, _Digits),
+            " - ", DoubleToString(maxHigh, _Digits));
+      SaveState();
+   }
+}
+
+//+------------------------------------------------------------------+
+//| RANGE VALIDITY CHECK                                              |
+//+------------------------------------------------------------------+
+bool IsRangeValid(SessionRange &session) {
+   return (session.high > 0 && session.low < 999999 && session.high > session.low);
+}
+
+//+------------------------------------------------------------------+
 //| UPDATE OPENING RANGE                                              |
 //+------------------------------------------------------------------+
 void UpdateOpeningRange() {
    MqlDateTime dt;
    TimeToStruct(TimeCurrent(), dt);
+   datetime todayDate = iTime(_Symbol, PERIOD_D1, 0);
    
-   // Reset at opening range start
-   if(dt.hour == InpOpeningRangeStart && dt.min == 0) {
-      if(lastSessionReset != iTime(_Symbol, PERIOD_D1, 0)) {
+   // Reset on new day - use date comparison, not exact minute
+   if(lastSessionReset != todayDate) {
+      // If we're past the session window, backfill from history
+      if(dt.hour >= InpOpeningRangeEnd) {
+         BackfillOpeningRange();
+      }
+      // If we're at or after session start, reset for live building
+      else if(dt.hour >= InpOpeningRangeStart) {
          currentSession.high = 0;
          currentSession.low = 999999;
          currentSession.startTime = TimeCurrent();
          currentSession.broken = false;
          currentSession.isMidnight = false;
-         lastSessionReset = iTime(_Symbol, PERIOD_D1, 0);
+         lastSessionReset = todayDate;
+         SaveState();
       }
    }
    
@@ -977,16 +1181,23 @@ void UpdateOpeningRange() {
 void UpdateMidnightRange() {
    MqlDateTime dt;
    TimeToStruct(TimeCurrent(), dt);
+   datetime todayDate = iTime(_Symbol, PERIOD_D1, 0);
    
-   // Reset at midnight
-   if(dt.hour == InpMidnightStart && dt.min == 0) {
-      if(lastMidnightReset != iTime(_Symbol, PERIOD_D1, 0)) {
+   // Reset on new day - use date comparison, not exact minute
+   if(lastMidnightReset != todayDate) {
+      // If we're past the session window, backfill from history
+      if(dt.hour >= InpMidnightEnd) {
+         BackfillMidnightRange();
+      }
+      // If we're at or after session start, reset for live building
+      else if(dt.hour >= InpMidnightStart) {
          midnightSession.high = 0;
          midnightSession.low = 999999;
          midnightSession.startTime = TimeCurrent();
          midnightSession.broken = false;
          midnightSession.isMidnight = true;
-         lastMidnightReset = iTime(_Symbol, PERIOD_D1, 0);
+         lastMidnightReset = todayDate;
+         SaveState();
       }
    }
    
@@ -1291,7 +1502,7 @@ void ExecuteStrategies() {
    }
    
    // === OPENING RANGE BREAKOUT STRATEGY ===
-   if(InpUseOpeningRange && !currentSession.broken) {
+   if(InpUseOpeningRange && !currentSession.broken && IsRangeValid(currentSession)) {
       MqlDateTime dt;
       TimeToStruct(TimeCurrent(), dt);
       
@@ -1304,17 +1515,19 @@ void ExecuteStrategies() {
          if(currentClose > currentSession.high + minBreakSize && IsSentimentAligned(true)) {
             ExecuteTrade(ORDER_TYPE_BUY, "OpeningRange_Bull", currentClose);
             currentSession.broken = true;
+            SaveState();
          }
          // Bearish breakout
          else if(currentClose < currentSession.low - minBreakSize && IsSentimentAligned(false)) {
             ExecuteTrade(ORDER_TYPE_SELL, "OpeningRange_Bear", currentClose);
             currentSession.broken = true;
+            SaveState();
          }
       }
    }
    
    // === MIDNIGHT RANGE BREAKOUT STRATEGY ===
-   if(InpUseMidnightRange && !midnightSession.broken) {
+   if(InpUseMidnightRange && !midnightSession.broken && IsRangeValid(midnightSession)) {
       MqlDateTime dt;
       TimeToStruct(TimeCurrent(), dt);
       
@@ -1327,11 +1540,13 @@ void ExecuteStrategies() {
          if(currentClose > midnightSession.high + minBreakSize && IsSentimentAligned(true)) {
             ExecuteTrade(ORDER_TYPE_BUY, "MidnightRange_Bull", currentClose);
             midnightSession.broken = true;
+            SaveState();
          }
          // Bearish breakout
          else if(currentClose < midnightSession.low - minBreakSize && IsSentimentAligned(false)) {
             ExecuteTrade(ORDER_TYPE_SELL, "MidnightRange_Bear", currentClose);
             midnightSession.broken = true;
+            SaveState();
          }
       }
    }
@@ -1580,10 +1795,16 @@ void DisplayStatus() {
    status += "  SSL Levels: " + IntegerToString(ArraySize(sellSideLiq)) + "\n";
    status += "═══════════════════════════════\n";
    status += "SESSIONS:\n";
-   status += "  Opening Range: " + DoubleToString(currentSession.low, _Digits) + 
-             " - " + DoubleToString(currentSession.high, _Digits) + "\n";
-   status += "  Midnight Range: " + DoubleToString(midnightSession.low, _Digits) + 
-             " - " + DoubleToString(midnightSession.high, _Digits) + "\n";
+   if(IsRangeValid(currentSession))
+      status += "  Opening Range: " + DoubleToString(currentSession.low, _Digits) +
+                " - " + DoubleToString(currentSession.high, _Digits) + "\n";
+   else
+      status += "  Opening Range: N/A (waiting for session)\n";
+   if(IsRangeValid(midnightSession))
+      status += "  Midnight Range: " + DoubleToString(midnightSession.low, _Digits) +
+                " - " + DoubleToString(midnightSession.high, _Digits) + "\n";
+   else
+      status += "  Midnight Range: N/A (waiting for session)\n";
    status += "═══════════════════════════════\n";
    status += "Last Strategy: " + lastStrategy + "\n";
    
