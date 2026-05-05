@@ -222,11 +222,12 @@ int            g_ma200Handle = INVALID_HANDLE;
 //| DASHBOARD STATE                                                   |
 //+------------------------------------------------------------------+
 #define DASH_PREFIX "SMCDash_"
-#define DASH_BG     DASH_PREFIX "BG"
-#define DASH_TITLE  DASH_PREFIX "Title"
-#define DASH_MINBTN DASH_PREFIX "MinBtn"
-#define DASH_CLSBTN DASH_PREFIX "ClsBtn"
-#define DASH_ROWS   20        // max text rows
+#define DASH_BG      DASH_PREFIX "BG"
+#define DASH_TITLEBG DASH_PREFIX "TitleBG"
+#define DASH_TITLE   DASH_PREFIX "Title"
+#define DASH_MINBTN  DASH_PREFIX "MinBtn"
+#define DASH_CLSBTN  DASH_PREFIX "ClsBtn"
+#define DASH_ROWS    20        // max text rows
 int      dashX         = 20;   // top-left corner X (pixels from left)
 int      dashY         = 30;   // top-left corner Y (pixels from top)
 int      dashWidth     = 260;  // panel width
@@ -235,8 +236,9 @@ int      dashPadX      = 10;   // horizontal padding
 int      dashPadY      = 8;    // vertical padding
 bool     dashMinimized = false; // minimize toggle
 bool     dashVisible   = true;  // close toggle
+// --- Mouse-drag state ---
 bool     dashDragging  = false;
-int      dashDragOfsX  = 0;
+int      dashDragOfsX  = 0;    // mouse offset from panel top-left when drag started
 int      dashDragOfsY  = 0;
 string   dashRowNames[];       // array of row label names
 string   dashFullText[];       // full text when expanded
@@ -272,9 +274,24 @@ void DashCreateBG(int x, int y, int w, int h)
    ObjectSetInteger(0, DASH_BG, OBJPROP_BORDER_COLOR, C'80,80,120');
    ObjectSetInteger(0, DASH_BG, OBJPROP_BORDER_TYPE, BORDER_FLAT);
    ObjectSetInteger(0, DASH_BG, OBJPROP_CORNER, CORNER_LEFT_UPPER);
-   ObjectSetInteger(0, DASH_BG, OBJPROP_SELECTABLE, true);  // draggable
+   ObjectSetInteger(0, DASH_BG, OBJPROP_SELECTABLE, false);  // not draggable via object
    ObjectSetInteger(0, DASH_BG, OBJPROP_SELECTED, false);
    ObjectSetInteger(0, DASH_BG, OBJPROP_BACK, false);
+}
+
+void DashCreateTitleBar(int x, int y, int w, int h)
+{
+   ObjectCreate(0, DASH_TITLEBG, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, DASH_TITLEBG, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, DASH_TITLEBG, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, DASH_TITLEBG, OBJPROP_XSIZE, w);
+   ObjectSetInteger(0, DASH_TITLEBG, OBJPROP_YSIZE, h);
+   ObjectSetInteger(0, DASH_TITLEBG, OBJPROP_BGCOLOR, C'30,30,50');
+   ObjectSetInteger(0, DASH_TITLEBG, OBJPROP_BORDER_COLOR, C'60,60,100');
+   ObjectSetInteger(0, DASH_TITLEBG, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSetInteger(0, DASH_TITLEBG, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, DASH_TITLEBG, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, DASH_TITLEBG, OBJPROP_BACK, false);
 }
 
 void DashCreateButton(string name, int x, int y, int w, int h,
@@ -293,6 +310,49 @@ void DashCreateButton(string name, int x, int y, int w, int h,
    ObjectSetString (0, name, OBJPROP_FONT, "Consolas");
    ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
    ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+}
+
+//+------------------------------------------------------------------+
+//| Move all dashboard elements by delta pixels                       |
+//+------------------------------------------------------------------+
+void DashMoveAll(int dx, int dy)
+{
+   // Move BG
+   ObjectSetInteger(0, DASH_BG, OBJPROP_XDISTANCE,
+      (int)ObjectGetInteger(0, DASH_BG, OBJPROP_XDISTANCE) + dx);
+   ObjectSetInteger(0, DASH_BG, OBJPROP_YDISTANCE,
+      (int)ObjectGetInteger(0, DASH_BG, OBJPROP_YDISTANCE) + dy);
+   // Move title bar
+   ObjectSetInteger(0, DASH_TITLEBG, OBJPROP_XDISTANCE,
+      (int)ObjectGetInteger(0, DASH_TITLEBG, OBJPROP_XDISTANCE) + dx);
+   ObjectSetInteger(0, DASH_TITLEBG, OBJPROP_YDISTANCE,
+      (int)ObjectGetInteger(0, DASH_TITLEBG, OBJPROP_YDISTANCE) + dy);
+   // Move title label
+   ObjectSetInteger(0, DASH_TITLE, OBJPROP_XDISTANCE,
+      (int)ObjectGetInteger(0, DASH_TITLE, OBJPROP_XDISTANCE) + dx);
+   ObjectSetInteger(0, DASH_TITLE, OBJPROP_YDISTANCE,
+      (int)ObjectGetInteger(0, DASH_TITLE, OBJPROP_YDISTANCE) + dy);
+   // Move buttons
+   ObjectSetInteger(0, DASH_MINBTN, OBJPROP_XDISTANCE,
+      (int)ObjectGetInteger(0, DASH_MINBTN, OBJPROP_XDISTANCE) + dx);
+   ObjectSetInteger(0, DASH_MINBTN, OBJPROP_YDISTANCE,
+      (int)ObjectGetInteger(0, DASH_MINBTN, OBJPROP_YDISTANCE) + dy);
+   ObjectSetInteger(0, DASH_CLSBTN, OBJPROP_XDISTANCE,
+      (int)ObjectGetInteger(0, DASH_CLSBTN, OBJPROP_XDISTANCE) + dx);
+   ObjectSetInteger(0, DASH_CLSBTN, OBJPROP_YDISTANCE,
+      (int)ObjectGetInteger(0, DASH_CLSBTN, OBJPROP_YDISTANCE) + dy);
+   // Move row labels
+   int cnt = ArraySize(dashRowNames);
+   for(int i = 0; i < cnt; i++)
+   {
+      if(ObjectFind(0, dashRowNames[i]) >= 0)
+      {
+         ObjectSetInteger(0, dashRowNames[i], OBJPROP_XDISTANCE,
+            (int)ObjectGetInteger(0, dashRowNames[i], OBJPROP_XDISTANCE) + dx);
+         ObjectSetInteger(0, dashRowNames[i], OBJPROP_YDISTANCE,
+            (int)ObjectGetInteger(0, dashRowNames[i], OBJPROP_YDISTANCE) + dy);
+      }
+   }
 }
 
 void DashDestroy()
@@ -320,13 +380,16 @@ void DashBuild()
    else
       bgH = titleH + dashPadY * 2 + rows * dashRowH;
    
-   // --- Background ---
+   // --- Destroy old objects ---
    DashDestroy();
+   
+   // --- Background ---
    DashCreateBG(dashX, dashY, dashWidth, bgH);
    
    // --- Title bar (draggable area) ---
+   DashCreateTitleBar(dashX, dashY, dashWidth, titleH);
    DashCreateLabel(DASH_TITLE, dashX + dashPadX, dashY + 4,
-                   "SMC Dashboard", 10, clrGold, "Consolas");
+                   "≡ SMC Dashboard", 10, clrGold, "Consolas");
    ObjectSetInteger(0, DASH_TITLE, OBJPROP_SELECTABLE, false);
    
    // --- Minimize button [ — ] / [ + ] ---
@@ -359,6 +422,14 @@ void DashBuild()
    }
    
    ChartRedraw(0);
+}
+
+//+------------------------------------------------------------------+
+//| Helper: check if mouse is inside a rectangle                     |
+//+------------------------------------------------------------------+
+bool DashMouseInRect(int mx, int my, int rx, int ry, int rw, int rh)
+{
+   return (mx >= rx && mx < rx + rw && my >= ry && my < ry + rh);
 }
 
 //+------------------------------------------------------------------+
@@ -395,20 +466,60 @@ void OnChartEvent(const int id, const long &lparam,
       return;
    }
    
-   // --- Drag the background panel ---
-   if(id == CHARTEVENT_OBJECT_DRAG) {
-      if(sparam == DASH_BG) {
-         int newX = (int)ObjectGetInteger(0, DASH_BG, OBJPROP_XDISTANCE);
-         int newY = (int)ObjectGetInteger(0, DASH_BG, OBJPROP_YDISTANCE);
-         if(newX != dashX || newY != dashY) {
-            dashX = newX;
-            dashY = newY;
-            DashBuild();
+   // --- Mouse drag on title bar ---
+   if(dashVisible)
+   {
+      int mx = (int)lparam;
+      int my = (int)dparam;
+      
+      // Mouse left-button down on title bar → start dragging
+      if(id == CHARTEVENT_MOUSE_MOVE)
+      {
+         bool lmb = ((int)sparam & 1) != 0;  // left mouse button flag
+         
+         if(lmb && !dashDragging)
+         {
+            // Check if mouse is over the title bar area
+            int titleH = 22;
+            if(DashMouseInRect(mx, my, dashX, dashY, dashWidth, titleH))
+            {
+               // Don't start drag if clicking on minimize/close buttons
+               int btnY = dashY + 2;
+               int btnH = 18;
+               int minBtnX = dashX + dashWidth - 52;
+               int clsBtnX = dashX + dashWidth - 26;
+               if(DashMouseInRect(mx, my, minBtnX, btnY, 22, btnH)) return;
+               if(DashMouseInRect(mx, my, clsBtnX, btnY, 22, btnH)) return;
+               
+               dashDragging = true;
+               dashDragOfsX = mx - dashX;
+               dashDragOfsY = my - dashY;
+            }
+         }
+         else if(lmb && dashDragging)
+         {
+            // Continue dragging — move panel
+            int newX = mx - dashDragOfsX;
+            int newY = my - dashDragOfsY;
+            int dx = newX - dashX;
+            int dy = newY - dashY;
+            if(dx != 0 || dy != 0)
+            {
+               dashX = newX;
+               dashY = newY;
+               DashMoveAll(dx, dy);
+               ChartRedraw(0);
+            }
+         }
+         else if(!lmb && dashDragging)
+         {
+            // Mouse released — stop dragging
+            dashDragging = false;
          }
       }
    }
    
-   // --- Deselect BG after drag completes ---
+   // --- Deselect BG if clicked (legacy safety) ---
    if(id == CHARTEVENT_OBJECT_CLICK && sparam == DASH_BG) {
       ObjectSetInteger(0, DASH_BG, OBJPROP_SELECTED, false);
       ChartRedraw(0);
