@@ -1259,10 +1259,23 @@ void LoadState() {
    MqlDateTime dt;
    TimeToStruct(TimeCurrent(), dt);
    
-   if(lastSessionReset != todayDate && dt.hour >= InpOpeningRangeEnd) {
+   // Check if we're past the session end (handles cross-midnight)
+   bool pastOpeningEnd = false;
+   if(InpOpeningRangeStart < InpOpeningRangeEnd)
+      pastOpeningEnd = (dt.hour >= InpOpeningRangeEnd);
+   else
+      pastOpeningEnd = (dt.hour >= InpOpeningRangeEnd && dt.hour < InpOpeningRangeStart);
+   
+   bool pastMidnightEnd = false;
+   if(InpMidnightStart < InpMidnightEnd)
+      pastMidnightEnd = (dt.hour >= InpMidnightEnd);
+   else
+      pastMidnightEnd = (dt.hour >= InpMidnightEnd && dt.hour < InpMidnightStart);
+   
+   if(lastSessionReset != todayDate && pastOpeningEnd) {
       BackfillOpeningRange();
    }
-   if(lastMidnightReset != todayDate && dt.hour >= InpMidnightEnd) {
+   if(lastMidnightReset != todayDate && pastMidnightEnd) {
       BackfillMidnightRange();
    }
 }
@@ -1273,7 +1286,13 @@ void LoadState() {
 void BackfillOpeningRange() {
    datetime todayDate = iTime(_Symbol, PERIOD_D1, 0);
    datetime rangeStart = todayDate + InpOpeningRangeStart * 3600;
-   datetime rangeEnd = todayDate + InpOpeningRangeEnd * 3600;
+   datetime rangeEnd;
+   
+   // Handle cross-midnight sessions: end time is next day
+   if(InpOpeningRangeStart < InpOpeningRangeEnd)
+      rangeEnd = todayDate + InpOpeningRangeEnd * 3600;
+   else
+      rangeEnd = todayDate + 86400 + InpOpeningRangeEnd * 3600;
    
    int startBar = iBarShift(_Symbol, PERIOD_CURRENT, rangeStart, false);
    int endBar = iBarShift(_Symbol, PERIOD_CURRENT, rangeEnd, false);
@@ -1304,7 +1323,7 @@ void BackfillOpeningRange() {
       currentSession.broken = false;
       currentSession.isMidnight = false;
       lastSessionReset = todayDate;
-      Print("SMC: Backfilled Opening Range=", DoubleToString(minLow, _Digits),
+      Print("SMC: Backfilled Opening Range= ", DoubleToString(minLow, _Digits),
             " - ", DoubleToString(maxHigh, _Digits));
       SaveState();
    }
@@ -1316,7 +1335,13 @@ void BackfillOpeningRange() {
 void BackfillMidnightRange() {
    datetime todayDate = iTime(_Symbol, PERIOD_D1, 0);
    datetime rangeStart = todayDate + InpMidnightStart * 3600;
-   datetime rangeEnd = todayDate + InpMidnightEnd * 3600;
+   datetime rangeEnd;
+   
+   // Handle cross-midnight sessions: end time is next day
+   if(InpMidnightStart < InpMidnightEnd)
+      rangeEnd = todayDate + InpMidnightEnd * 3600;
+   else
+      rangeEnd = todayDate + 86400 + InpMidnightEnd * 3600;
    
    int startBar = iBarShift(_Symbol, PERIOD_CURRENT, rangeStart, false);
    int endBar = iBarShift(_Symbol, PERIOD_CURRENT, rangeEnd, false);
@@ -1347,7 +1372,7 @@ void BackfillMidnightRange() {
       midnightSession.broken = false;
       midnightSession.isMidnight = true;
       lastMidnightReset = todayDate;
-      Print("SMC: Backfilled Midnight Range=", DoubleToString(minLow, _Digits),
+      Print("SMC: Backfilled Midnight Range= ", DoubleToString(minLow, _Digits),
             " - ", DoubleToString(maxHigh, _Digits));
       SaveState();
    }
@@ -1368,14 +1393,28 @@ void UpdateOpeningRange() {
    TimeToStruct(TimeCurrent(), dt);
    datetime todayDate = iTime(_Symbol, PERIOD_D1, 0);
    
+   // Check if current hour is within the session window (handles cross-midnight)
+   bool inSession = false;
+   if(InpOpeningRangeStart < InpOpeningRangeEnd)
+      inSession = (dt.hour >= InpOpeningRangeStart && dt.hour < InpOpeningRangeEnd);
+   else
+      inSession = (dt.hour >= InpOpeningRangeStart || dt.hour < InpOpeningRangeEnd);
+   
+   // Check if current hour is past the session end
+   bool pastEnd = false;
+   if(InpOpeningRangeStart < InpOpeningRangeEnd)
+      pastEnd = (dt.hour >= InpOpeningRangeEnd);
+   else
+      pastEnd = (dt.hour >= InpOpeningRangeEnd && dt.hour < InpOpeningRangeStart);
+   
    // Reset on new day - use date comparison, not exact minute
    if(lastSessionReset != todayDate) {
       // If we're past the session window, backfill from history
-      if(dt.hour >= InpOpeningRangeEnd) {
+      if(pastEnd) {
          BackfillOpeningRange();
       }
       // If we're at or after session start, reset for live building
-      else if(dt.hour >= InpOpeningRangeStart) {
+      else if(inSession) {
          currentSession.high = 0;
          currentSession.low = 999999;
          currentSession.startTime = TimeCurrent();
@@ -1387,7 +1426,7 @@ void UpdateOpeningRange() {
    }
    
    // Update range during opening hours
-   if(dt.hour >= InpOpeningRangeStart && dt.hour < InpOpeningRangeEnd) {
+   if(inSession) {
       double high = iHigh(_Symbol, PERIOD_CURRENT, 0);
       double low = iLow(_Symbol, PERIOD_CURRENT, 0);
       
@@ -1406,14 +1445,28 @@ void UpdateMidnightRange() {
    TimeToStruct(TimeCurrent(), dt);
    datetime todayDate = iTime(_Symbol, PERIOD_D1, 0);
    
+   // Check if current hour is within the session window (handles cross-midnight)
+   bool inSession = false;
+   if(InpMidnightStart < InpMidnightEnd)
+      inSession = (dt.hour >= InpMidnightStart && dt.hour < InpMidnightEnd);
+   else
+      inSession = (dt.hour >= InpMidnightStart || dt.hour < InpMidnightEnd);
+   
+   // Check if current hour is past the session end
+   bool pastEnd = false;
+   if(InpMidnightStart < InpMidnightEnd)
+      pastEnd = (dt.hour >= InpMidnightEnd);
+   else
+      pastEnd = (dt.hour >= InpMidnightEnd && dt.hour < InpMidnightStart);
+   
    // Reset on new day - use date comparison, not exact minute
    if(lastMidnightReset != todayDate) {
       // If we're past the session window, backfill from history
-      if(dt.hour >= InpMidnightEnd) {
+      if(pastEnd) {
          BackfillMidnightRange();
       }
       // If we're at or after session start, reset for live building
-      else if(dt.hour >= InpMidnightStart) {
+      else if(inSession) {
          midnightSession.high = 0;
          midnightSession.low = 999999;
          midnightSession.startTime = TimeCurrent();
@@ -1425,7 +1478,7 @@ void UpdateMidnightRange() {
    }
    
    // Update range during midnight hours
-   if(dt.hour >= InpMidnightStart && dt.hour < InpMidnightEnd) {
+   if(inSession) {
       double high = iHigh(_Symbol, PERIOD_CURRENT, 0);
       double low = iLow(_Symbol, PERIOD_CURRENT, 0);
       
@@ -1729,8 +1782,14 @@ void ExecuteStrategies() {
       MqlDateTime dt;
       TimeToStruct(TimeCurrent(), dt);
       
-      // Only trade after opening range ends
-      if(dt.hour >= InpOpeningRangeEnd) {
+      // Only trade after opening range ends (handles cross-midnight)
+      bool canTradeOpening = false;
+      if(InpOpeningRangeStart < InpOpeningRangeEnd)
+         canTradeOpening = (dt.hour >= InpOpeningRangeEnd);
+      else
+         canTradeOpening = (dt.hour >= InpOpeningRangeEnd && dt.hour < InpOpeningRangeStart);
+      
+      if(canTradeOpening) {
          double rangeSize = currentSession.high - currentSession.low;
          double minBreakSize = rangeSize * InpSessionBreakConf;
          
@@ -1754,8 +1813,14 @@ void ExecuteStrategies() {
       MqlDateTime dt;
       TimeToStruct(TimeCurrent(), dt);
       
-      // Only trade after midnight range ends
-      if(dt.hour >= InpMidnightEnd) {
+      // Only trade after midnight range ends (handles cross-midnight)
+      bool canTradeMidnight = false;
+      if(InpMidnightStart < InpMidnightEnd)
+         canTradeMidnight = (dt.hour >= InpMidnightEnd);
+      else
+         canTradeMidnight = (dt.hour >= InpMidnightEnd && dt.hour < InpMidnightStart);
+      
+      if(canTradeMidnight) {
          double rangeSize = midnightSession.high - midnightSession.low;
          double minBreakSize = rangeSize * InpSessionBreakConf;
          
