@@ -340,8 +340,9 @@ void DashBuild()
    
    // --- Row labels (only when expanded) ---
    if(!dashMinimized) {
-      ArrayResize(dashRowNames, rows);
-      for(int i = 0; i < rows; i++) {
+      int textCount = ArraySize(dashFullText);
+      ArrayResize(dashRowNames, textCount);
+      for(int i = 0; i < textCount; i++) {
          string rName = DASH_PREFIX + "R" + IntegerToString(i);
          dashRowNames[i] = rName;
          int ry = dashY + titleH + dashPadY + i * dashRowH;
