@@ -10,12 +10,6 @@ mql5-expert-advisors/
 │   ├── Gold_MultiStrategy_EA.mq5      # 11-strategy gold EA (v2.0)
 │   ├── SmartMoney_Concepts_EA.mq5     # SMC-based EA (v1.0)
 │   └── README.md      # EA documentation
-├── neural-ea/         # Neural-Enhanced Trading System
-│   ├── mql5/          # MQL5 EAs (Live, SmartMoney, DataCollector)
-│   ├── scripts/       # Python server, training, live trainer
-│   ├── models/        # Trained ML models (LSTM, CatBoost, Price Predictor)
-│   ├── data/          # Training data from MT5
-│   └── README.md      # Neural EA documentation
 ├── book/              # MQL5 Book — 341 chapters
 ├── neurobook/         # Neural networks for trading (9 chapters)
 ├── docs/              # MQL5 Language Reference (8 sections)
@@ -26,27 +20,6 @@ mql5-expert-advisors/
 ```
 
 ## 🤖 Expert Advisors
-
-### Neural-Enhanced Trading System (NEW!)
-
-**2 EAs** — NeuralEA_Live (Python server) + NeuralEA_SmartMoney (ONNX inference)
-
-| EA | Architecture | Inference | Best For |
-|----|-------------|-----------|----------|
-| **NeuralEA_Live** | SMC + 3 ML models via HTTP | Python server (port 5556) | Full ML pipeline, live retraining |
-| **NeuralEA_SmartMoney** | SMC + 3 ONNX models | In-MT5 ONNX Runtime | Standalone, no external deps |
-
-**Neural Models:**
-- **LSTM Trend Filter** — Predicts ADX to filter ranging markets
-- **CatBoost Signal Filter** — Win probability from 30 oscillator features
-- **Price Predictor** — CNN+LSTM hybrid for directional bias
-
-**Architecture:**
-```
-SMC Signal (BOS/FVG/OB/Liquidity) → Neural Filter (3 models) → Trade Execution
-```
-
-See `neural-ea/README.md` for full documentation.
 
 ### SmartMoney Concepts EA (v1.0)
 **Strategies**: BOS + CHoCH + FVG + Order Blocks + Liquidity Sweeps + Session Breakouts
@@ -79,31 +52,6 @@ Signal-voting system where multiple strategies must agree:
 
 ## 🚀 Quick Start
 
-### Neural EA Setup (Recommended)
-
-**Option A: Python Server (NeuralEA_Live)**
-```bash
-# 1. Train models
-cd neural-ea
-pip install -r requirements.txt
-python scripts/train_models.py --data data/neural_training_data.csv --models all
-
-# 2. Start prediction server (HTTP on 5556, TCP on 5555)
-python scripts/server.py
-
-# 3. In MT5: Add http://127.0.0.1:5556 to WebRequest allowed URLs
-# 4. Compile NeuralEA_Live.mq5 in MetaEditor
-# 5. Attach to chart (XAUUSDc H1 recommended)
-```
-
-**Option B: ONNX Inference (NeuralEA_SmartMoney)**
-```bash
-# 1. Train models (same as above)
-# 2. Copy .onnx files to MT5 MQL5/Files/
-# 3. Compile NeuralEA_SmartMoney.mq5 in MetaEditor
-# 4. Attach to chart — no external server needed
-```
-
 ### Traditional EAs
 
 1. Copy `.mq5` file to your MT5 `Experts` folder
@@ -115,7 +63,6 @@ python scripts/server.py
 ## 📊 Forward Testing Status
 
 Currently running forward tests:
-- **NeuralEA_Live** — Connected to Python server via WebRequest
 - **SmartMoney_Concepts_EA** — Running on separate broker
 
 ## Key MQL5 Concepts
@@ -136,7 +83,6 @@ void OnTimer()        { /* timer event */ }
 - `SymbolInfoDouble(symbol, SYMBOL_ASK)` — Get price
 - `AccountInfoDouble(ACCOUNT_BALANCE)` — Account info
 - `iMA()`, `iRSI()`, `iMACD()` — Technical indicators
-- `WebRequest()` — HTTP communication with external servers
 
 ## 🧠 NeuroBook Highlights
 
